@@ -11,14 +11,15 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
+from ..config import BASE_URL, TIMEZONE
 from ..database import get_db
 from ..models import Device, Employee, ImportedFile, RegistrationToken, TimeEntry, Vehicle
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
-BERLIN_TZ = ZoneInfo("Europe/Berlin")
+BERLIN_TZ = ZoneInfo(TIMEZONE)
 DEVICE_COOKIE = "device_token"
-BASE_TIME_URL = "http://localhost:8000/time"
+BASE_TIME_URL = f"{BASE_URL}/time"
 
 
 def now_berlin() -> datetime:
@@ -162,8 +163,9 @@ def render_admin_time(
         ).where(TimeEntry.status == "completed")
     ).one()
     return templates.TemplateResponse(
-        "admin_time.html",
-        {
+        request=request,
+        name="admin_time.html",
+        context={
             "request": request,
             "employees": employees,
             "device_counts": device_counts,
@@ -300,8 +302,9 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
     reg = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token))
     if not reg or reg.used:
         return templates.TemplateResponse(
-            "register_status.html",
-            {"request": request, "ok": False, "message": "Geçersiz veya kullanılmış token."},
+            request=request,
+            name="register_status.html",
+            context={"request": request, "ok": False, "message": "Geçersiz veya kullanılmış token."},
         )
     new_token = token_urlsafe(32)
     db.add(
@@ -316,8 +319,9 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
     db.commit()
     employee = db.scalar(select(Employee).where(Employee.id == reg.employee_id))
     resp = templates.TemplateResponse(
-        "register_status.html",
-        {
+        request=request,
+        name="register_status.html",
+        context={
             "request": request,
             "ok": True,
             "message": "Cihaz başarıyla kaydedildi.",
@@ -333,8 +337,9 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
 def import_page(request: Request, db: Session = Depends(get_db)):
     files = db.scalars(select(ImportedFile).order_by(desc(ImportedFile.created_at)).limit(20)).all()
     return templates.TemplateResponse(
-        "import.html",
-        {"request": request, "files": files, "message": "", "error": ""},
+        request=request,
+        name="import.html",
+        context={"request": request, "files": files, "message": "", "error": ""},
     )
 
 
@@ -358,8 +363,9 @@ async def import_upload(request: Request, file: UploadFile = File(...), db: Sess
         error = str(ex)
     files = db.scalars(select(ImportedFile).order_by(desc(ImportedFile.created_at)).limit(20)).all()
     return templates.TemplateResponse(
-        "import.html",
-        {"request": request, "files": files, "message": f"Import tamamlandı. Satır: {imported_rows}", "error": error},
+        request=request,
+        name="import.html",
+        context={"request": request, "files": files, "message": f"Import tamamlandı. Satır: {imported_rows}", "error": error},
     )
 
 
@@ -489,8 +495,9 @@ def admin_time_reports(
             }
         )
     return templates.TemplateResponse(
-        "admin_time_reports.html",
-        {
+        request=request,
+        name="admin_time_reports.html",
+        context={
             "request": request,
             "employees": employees,
             "vehicles": vehicles,
@@ -940,8 +947,9 @@ def admin_time_vehicles(request: Request, message: str = "", db: Session = Depen
         for v in vehicles
     ]
     return templates.TemplateResponse(
-        "admin_time_vehicles.html",
-        {"request": request, "vehicles": rows, "all_vehicles": all_rows, "message": message},
+        request=request,
+        name="admin_time_vehicles.html",
+        context={"request": request, "vehicles": rows, "all_vehicles": all_rows, "message": message},
     )
 
 

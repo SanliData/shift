@@ -1,0 +1,10 @@
+fastapi==0.115.0
+starlette==0.38.6
+uvicorn==0.30.6
+sqlalchemy==2.0.35
+jinja2==3.1.4
+python-multipart
+openpyxl
+qrcode[pil]
+pillow
+python-dotenv

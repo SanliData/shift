@@ -36,6 +36,7 @@
             <span class="badge">{{ v.type }}</span>
             <img class="qr-thumb" src="{{ v.qr_img_url }}" alt="QR {{ v.slug }}">
             <p class="muted">{{ v.slug }}</p>
+            <p class="muted"><a href="{{ v.qr_link }}">{{ v.qr_link }}</a></p>
             <a class="btn btn-primary small" href="{{ v.qr_download_url }}" download="qr-{{ v.slug }}-print.png">Download QR</a>
         </article>
         {% else %}

@@ -7,15 +7,16 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from ..config import TIMEZONE, TIME_FALLBACK_URL
 from ..database import get_db
 from ..models import Device, Employee, TimeEntry, Vehicle
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
-BERLIN_TZ = ZoneInfo("Europe/Berlin")
+BERLIN_TZ = ZoneInfo(TIMEZONE)
 DEVICE_COOKIE = "device_token"
-FALLBACK_URL = "/ui/index.html"
+FALLBACK_URL = TIME_FALLBACK_URL
 
 
 def now_berlin() -> datetime:
@@ -57,8 +58,9 @@ def time_page(request: Request, vehicle: str, db: Session = Depends(get_db)):
 
     active_entry = get_active_entry(db, device.employee_id)
     return templates.TemplateResponse(
-        "time.html",
-        {
+        request=request,
+        name="time.html",
+        context={
             "request": request,
             "employee": device.employee,
             "vehicle": vehicle_obj,
