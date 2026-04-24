@@ -74,13 +74,14 @@
     {% if register_link %}
         <p class="msg success">{{ message }}</p>
         <p><a href="{{ register_link }}">{{ register_link }}</a></p>
+        <button class="btn btn-secondary small" type="button" data-label="Kopyala" data-copy-text="{{ register_link }}" onclick="copyRegisterLink(this)">Kopyala</button>
     {% endif %}
 </section>
 
 <section class="card">
     <h3>Çalışan Tablosu</h3>
     <table>
-        <thead><tr><th>Çalışan</th><th>Telefon</th><th>Normal saat ücreti</th><th>Fazla mesai saat ücreti</th><th>Cihaz sayısı</th><th>Aktif/Pasif</th><th>Aktif mesai</th><th>Toplam saat</th><th>Kayıt Linki</th></tr></thead>
+        <thead><tr><th>Çalışan</th><th>Telefon</th><th>Normal saat ücreti</th><th>Fazla mesai saat ücreti</th><th>Cihaz sayısı</th><th>Aktif/Pasif</th><th>Aktif mesai</th><th>Toplam saat</th><th>Kayıt linki ve gönderim</th></tr></thead>
         <tbody>
         {% for e in employees %}
             <tr>
@@ -92,11 +93,28 @@
                 <td>{% if e.active %}<span class="badge active">Aktif</span>{% else %}<span class="badge">Pasif</span>{% endif %}</td>
                 <td>{{ employee_active_map.get(e.id, 0) }}</td>
                 <td>{{ "%.2f"|format((employee_total_minutes_map.get(e.id, 0) / 60)) }}</td>
-                <td>
-                    <form method="post" action="/admin-time/register-link">
+                <td class="stack-actions">
+                    {% set act = employee_actions.get(e.id, {}) %}
+                    <form method="post" action="/admin-time/register-link" class="inline-actions">
                         <input type="hidden" name="employee_id" value="{{ e.id }}">
-                        <button class="btn btn-primary small" type="submit">Link Üret</button>
+                        <button class="btn btn-primary small" type="submit">Kayıt Linki Üret</button>
                     </form>
+                    {% if act.wa_url %}
+                    <a class="btn btn-secondary small" href="{{ act.wa_url }}" target="_blank" rel="noopener">WhatsApp ile Gönder</a>
+                    {% else %}
+                    <span class="muted small">WhatsApp için telefon gerekli</span>
+                    {% endif %}
+                    {% if act.sms_uri %}
+                    <button class="btn btn-secondary small" type="button" data-label="SMS Linkini Kopyala" data-copy-text="{{ act.sms_uri }}" onclick="copyRegisterLink(this)">SMS Linkini Kopyala</button>
+                    {% endif %}
+                    {% if act.register_link %}
+                    <div class="register-inline">
+                        <a href="{{ act.register_link }}">{{ act.register_link }}</a>
+                        <button class="btn btn-secondary small" type="button" data-label="Kopyala" data-copy-text="{{ act.register_link }}" onclick="copyRegisterLink(this)">Kopyala</button>
+                    </div>
+                    {% else %}
+                    <p class="muted small">Önce kayıt linki üretin.</p>
+                    {% endif %}
                 </td>
             </tr>
         {% else %}
@@ -137,12 +155,19 @@
 <section class="card">
     <h3>Kayıtlı Cihazlar</h3>
     <table>
-        <thead><tr><th>ID</th><th>Employee ID</th><th>Token</th><th>Active</th></tr></thead>
+        <thead><tr><th>ID</th><th>Çalışan</th><th>Telefon</th><th>Kayıt tarihi</th><th>Token</th><th>Aktif/Pasif</th></tr></thead>
         <tbody>
         {% for d in devices %}
-            <tr><td>{{ d.id }}</td><td>{{ d.employee_id }}</td><td>{{ d.device_token[:12] }}...</td><td>{{ d.active }}</td></tr>
+            <tr>
+                <td>{{ d.id }}</td>
+                <td>{{ d.employee.name if d.employee else "—" }}</td>
+                <td>{{ d.employee.phone_number if d.employee and d.employee.phone_number else "—" }}</td>
+                <td>{% if d.created_at %}{{ d.created_at.strftime("%d.%m.%Y %H:%M") }}{% else %}—{% endif %}</td>
+                <td>{{ d.device_token[:12] }}...</td>
+                <td>{% if d.active %}<span class="badge active">Aktif</span>{% else %}<span class="badge">Pasif</span>{% endif %}</td>
+            </tr>
         {% else %}
-            <tr><td colspan="4">Kayıtlı cihaz yok.</td></tr>
+            <tr><td colspan="6">Kayıtlı cihaz yok.</td></tr>
         {% endfor %}
         </tbody>
     </table>
@@ -198,4 +223,25 @@
         </div>
     </form>
 </dialog>
+<script>
+async function copyRegisterLink(btn) {
+    const text = btn.getAttribute("data-copy-text") || "";
+    if (!text) return;
+    const label = btn.getAttribute("data-label") || "Kopyala";
+    try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "Kopyalandı";
+        setTimeout(() => { btn.textContent = label; }, 1500);
+    } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        btn.textContent = "Kopyalandı";
+        setTimeout(() => { btn.textContent = label; }, 1500);
+    }
+}
+</script>
 {% endblock %}

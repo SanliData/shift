@@ -10,7 +10,7 @@
         {% if employee_phone %}
         <p><strong>Telefon:</strong> {{ employee_phone }}</p>
         {% endif %}
-        <a class="btn btn-primary" href="/time?vehicle=vehicle-01">Mesai ekranına git</a>
+        <a class="btn btn-primary" href="{{ time_entry_url or '/time?vehicle=vehicle-01' }}">Mesai ekranına git</a>
     {% else %}
         <h2>Kayıt başarısız</h2>
         <p class="alert error">{{ message or "Bilinmeyen hata." }}</p>

@@ -23,8 +23,16 @@ def get_setting(key: str, default: str) -> str:
     return os.getenv(key) or _read_dotenv_value(key) or default
 
 
+def get_bool_setting(key: str, default: bool) -> bool:
+    raw = os.getenv(key) or _read_dotenv_value(key)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
 BASE_URL = get_setting("BASE_URL", "http://127.0.0.1:8002").rstrip("/")
 TIMEZONE = get_setting("TIMEZONE", "Europe/Berlin")
 ENV = get_setting("ENV", "development").lower()
 DATABASE_URL = get_setting("DATABASE_URL", "sqlite:///./data/app.db")
 TIME_FALLBACK_URL = BASE_URL if ENV == "production" else "/ui/index.html"
+COOKIE_SECURE = get_bool_setting("COOKIE_SECURE", ENV == "production")

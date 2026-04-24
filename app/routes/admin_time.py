@@ -2,6 +2,7 @@ import io
 import re
 from datetime import datetime, timedelta
 from secrets import token_urlsafe
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import qrcode
@@ -9,9 +10,9 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from ..config import BASE_URL, TIMEZONE
+from ..config import BASE_URL, COOKIE_SECURE, TIMEZONE
 from ..database import get_db
 from ..models import Device, Employee, ImportedFile, RegistrationToken, TimeEntry, Vehicle
 
@@ -89,6 +90,26 @@ def parse_optional_float(value: str | None) -> float | None:
         return None
 
 
+def normalize_phone_digits(phone: str | None) -> str:
+    if not phone:
+        return ""
+    return re.sub(r"\D+", "", phone)
+
+
+def build_register_link(token: str) -> str:
+    return f"{BASE_URL}/register-device?token={token}"
+
+
+def build_whatsapp_link(phone_digits: str, register_link: str) -> str:
+    text = f"Mesai sistemi cihaz kayit linkiniz: {register_link}"
+    return f"https://wa.me/{phone_digits}?text={quote(text)}"
+
+
+def build_sms_uri(phone_digits: str, register_link: str) -> str:
+    body = f"Mesai sistemi cihaz kayit linkiniz: {register_link}"
+    return f"sms:+{phone_digits}?body={quote(body)}"
+
+
 def render_admin_time(
     request: Request,
     db: Session,
@@ -102,7 +123,9 @@ def render_admin_time(
 ):
     employees = db.scalars(select(Employee).order_by(Employee.name)).all()
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.qr_code_slug)).all()
-    devices = db.scalars(select(Device).order_by(desc(Device.created_at))).all()
+    devices = db.scalars(
+        select(Device).options(selectinload(Device.employee)).order_by(desc(Device.created_at))
+    ).all()
     device_counts: dict[int, int] = {}
     for d in devices:
         if d.active:
@@ -156,6 +179,26 @@ def render_admin_time(
             month_cost += row_total_cost
             month_overtime_cost += row_overtime_cost
     missing_rate_employees = [e.name for e in employees if float(e.hourly_rate or 0) <= 0]
+    employee_actions: dict[int, dict[str, str]] = {}
+    for emp in employees:
+        token_row = db.scalar(
+            select(RegistrationToken)
+            .where(RegistrationToken.employee_id == emp.id, RegistrationToken.used.is_(False))
+            .order_by(desc(RegistrationToken.created_at))
+        )
+        if not token_row:
+            employee_actions[emp.id] = {"register_link": "", "wa_url": "", "sms_uri": "", "phone_digits": ""}
+            continue
+        register_link_value = build_register_link(token_row.token)
+        digits = normalize_phone_digits(emp.phone_number)
+        wa_url = build_whatsapp_link(digits, register_link_value) if digits else ""
+        sms_uri = build_sms_uri(digits, register_link_value) if digits else ""
+        employee_actions[emp.id] = {
+            "register_link": register_link_value,
+            "wa_url": wa_url,
+            "sms_uri": sms_uri,
+            "phone_digits": digits,
+        }
     totals = db.execute(
         select(
             func.coalesce(func.sum(TimeEntry.total_minutes), 0),
@@ -186,6 +229,7 @@ def render_admin_time(
             "month_cost_eur": eur(month_cost),
             "month_overtime_cost_eur": eur(month_overtime_cost),
             "missing_rate_employees": missing_rate_employees,
+            "employee_actions": employee_actions,
             "berlin_now": now.strftime("%d.%m.%Y %H:%M:%S"),
             "filters": {
                 "date_from": date_from or "",
@@ -293,7 +337,7 @@ def create_register_link(request: Request, employee_id: int = Form(...), db: Ses
         )
     )
     db.commit()
-    link = str(request.base_url).rstrip("/") + f"/register-device?token={token}"
+    link = build_register_link(token)
     return render_admin_time(request, db, register_link=link, message="Kayıt linki oluşturuldu.")
 
 
@@ -318,6 +362,9 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
     reg.used = True
     db.commit()
     employee = db.scalar(select(Employee).where(Employee.id == reg.employee_id))
+    default_vehicle = db.scalar(select(Vehicle).where(Vehicle.active.is_(True)).order_by(Vehicle.qr_code_slug))
+    time_vehicle = default_vehicle.qr_code_slug if default_vehicle else "vehicle-01"
+    time_entry_url = f"/time?vehicle={time_vehicle}"
     resp = templates.TemplateResponse(
         request=request,
         name="register_status.html",
@@ -327,9 +374,18 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
             "message": "Cihaz başarıyla kaydedildi.",
             "employee_name": employee.name if employee else "",
             "employee_phone": employee.phone_number if employee else "",
+            "time_entry_url": time_entry_url,
         },
     )
-    resp.set_cookie(DEVICE_COOKIE, new_token, httponly=True, secure=False, samesite="lax", max_age=31536000)
+    resp.set_cookie(
+        DEVICE_COOKIE,
+        new_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=31536000,
+        path="/",
+    )
     return resp
 
 

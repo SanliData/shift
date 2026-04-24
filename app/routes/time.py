@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -7,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..config import TIMEZONE, TIME_FALLBACK_URL
+from ..config import BASE_URL, TIMEZONE, TIME_FALLBACK_URL
 from ..database import get_db
 from ..models import Device, Employee, TimeEntry, Vehicle
 
@@ -17,6 +18,7 @@ templates = Jinja2Templates(directory="app/templates")
 BERLIN_TZ = ZoneInfo(TIMEZONE)
 DEVICE_COOKIE = "device_token"
 FALLBACK_URL = TIME_FALLBACK_URL
+logger = logging.getLogger(__name__)
 
 
 def now_berlin() -> datetime:
@@ -46,8 +48,15 @@ def get_active_entry(db: Session, employee_id: int):
     )
 
 
+def redirect_no_device_cookie():
+    logger.debug("device_token cookie missing")
+    return RedirectResponse(BASE_URL, status_code=302)
+
+
 @router.get("/time", response_class=HTMLResponse)
 def time_page(request: Request, vehicle: str, db: Session = Depends(get_db)):
+    if not request.cookies.get(DEVICE_COOKIE):
+        return redirect_no_device_cookie()
     device = get_registered_device(db, request)
     if not device:
         return RedirectResponse(FALLBACK_URL, status_code=302)
@@ -73,6 +82,8 @@ def time_page(request: Request, vehicle: str, db: Session = Depends(get_db)):
 
 @router.post("/time/start")
 def start_shift(request: Request, vehicle_slug: str = Form(...), db: Session = Depends(get_db)):
+    if not request.cookies.get(DEVICE_COOKIE):
+        return redirect_no_device_cookie()
     device = get_registered_device(db, request)
     if not device:
         return RedirectResponse(FALLBACK_URL, status_code=302)
@@ -105,6 +116,8 @@ def start_shift(request: Request, vehicle_slug: str = Form(...), db: Session = D
 
 @router.post("/time/stop")
 def stop_shift(request: Request, vehicle_slug: str = Form(...), db: Session = Depends(get_db)):
+    if not request.cookies.get(DEVICE_COOKIE):
+        return redirect_no_device_cookie()
     device = get_registered_device(db, request)
     if not device:
         return RedirectResponse(FALLBACK_URL, status_code=302)
