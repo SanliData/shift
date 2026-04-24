@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero card">
+    <div>
+        <h2>QR kod ile araç bazlı mesai takip sistemi</h2>
+        <p>Modern dashboard arayüzü ile araç, çalışan ve cihaz süreçlerini tek panelden yönetin.</p>
+        <ul class="check-list">
+            <li>Araç bazlı QR sistemi</li>
+            <li>Çalışan & cihaz yönetimi</li>
+            <li>Mesai başlat / bitir</li>
+            <li>Raporlama</li>
+        </ul>
+    </div>
+    <div class="clock-card">
+        <h3>Saat</h3>
+        <div id="berlinClock" class="clock-time">{{ now_time }}</div>
+        <div class="clock-zone">Europe/Berlin (Frankfurt)</div>
+    </div>
+</section>
+
+<section class="quick-grid">
+    <article class="card quick-card"><div class="quick-icon">📊</div><h3>Admin-Time</h3><p>Çalışanlar, mesailer ve durum tabloları.</p><a class="btn btn-primary small" href="/admin-time">Git →</a></article>
+    <article class="card quick-card"><div class="quick-icon">📥</div><h3>Import</h3><p>Excel dosyalarını yükleyip kayıtları takip et.</p><a class="btn btn-primary small" href="/admin-time/import">Git →</a></article>
+    <article class="card quick-card"><div class="quick-icon">🚜</div><h3>Vehicles QR</h3><p>Araç QR oluştur, indir ve yazdır.</p><a class="btn btn-primary small" href="/admin-time/vehicles">Git →</a></article>
+    <article class="card quick-card"><div class="quick-icon">🖥️</div><h3>Kiosk Mode</h3><p>Saha ekranı için kiosk mod (placeholder).</p><a class="btn btn-secondary small" href="#">Git →</a></article>
+</section>
+
+<section class="card hero">
+    <div>
+        <h3>Sistem Hakkında</h3>
+        <p>Demo altyapısı FastAPI + SQLite ile çalışır. Tüm zaman gösterimi Europe/Berlin zaman dilimindedir.</p>
+    </div>
+    <div class="placeholder-visual">🚧 Excavator + QR</div>
+</section>
+
+<script>
+const clockEl = document.getElementById("berlinClock");
+if (clockEl) {
+  const updateClock = () => {
+    const now = new Date();
+    clockEl.textContent = new Intl.DateTimeFormat("tr-TR", {
+      timeZone: "Europe/Berlin",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    }).format(now);
+  };
+  updateClock();
+  setInterval(updateClock, 1000);
+}
+</script>
+{% endblock %}

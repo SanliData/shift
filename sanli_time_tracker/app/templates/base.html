@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title if title else "NOVARCHIVE QR Time Demo" }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="wrap">
+            <h1>NOVARCHIVE - QR Time Demo</h1>
+            <nav>
+                <a href="/">Ana Sayfa</a>
+                <a href="/admin-time">Admin</a>
+                <a href="/admin-time/dashboard">Dashboard</a>
+                <a href="/admin-time/reports">Raporlar</a>
+                <a href="/admin-time/import">Import</a>
+                <a href="/admin-time/register-device">Cihaz Kaydı</a>
+                <a href="/admin/vehicles">Araç QR</a>
+            </nav>
+        </div>
+    </header>
+    <main class="wrap">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

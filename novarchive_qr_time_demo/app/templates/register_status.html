@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card center">
+    {% if ok %}
+        <h2>Cihaz başarıyla kaydedildi</h2>
+        <p class="msg success">{{ message }}</p>
+        <p><a href="/time?vehicle=vehicle-01">Mesai ekranına git</a></p>
+    {% else %}
+        <h2>Kayıt başarısız</h2>
+        <p class="msg error">{{ message }}</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Admin-Time</h2>
+    <form class="filters" method="get" action="/admin-time">
+        <div><label>Tarih Başlangıç</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
+        <div><label>Tarih Bitiş</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
+        <div>
+            <label>Çalışan</label>
+            <select name="employee_id"><option value="">Tümü</option>
+            {% for e in employees %}
+                <option value="{{ e.id }}" {% if filters.employee_id|string == e.id|string %}selected{% endif %}>{{ e.name }}</option>
+            {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Araç</label>
+            <select name="vehicle_id"><option value="">Tümü</option>
+            {% for v in vehicles %}
+                <option value="{{ v.id }}" {% if filters.vehicle_id|string == v.id|string %}selected{% endif %}>{{ v.qr_code_slug }}</option>
+            {% endfor %}
+            </select>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary small" type="submit">Filtrele</button>
+            <a class="btn btn-secondary small" href="/admin-time">Temizle</a>
+        </div>
+    </form>
+
+    <div class="export-links">
+        <a href="/admin-time/export">Excel Export</a>
+        <a href="/admin-time/import">Excel Import</a>
+    </div>
+    <div class="stats">
+        <div><strong>Toplam dk:</strong> {{ total_minutes }}</div>
+        <div><strong>Fazla dk:</strong> {{ overtime_minutes }}</div>
+    </div>
+</section>
+
+<section class="card">
+    <h3>Cihaz Kayıt Linki Oluştur</h3>
+    <form method="post" action="/admin-time/register-link">
+        <select name="employee_id" required>
+            <option value="">Çalışan seçin</option>
+            {% for e in employees %}
+            <option value="{{ e.id }}">{{ e.name }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary small" type="submit">Link Üret</button>
+    </form>
+    {% if register_link %}
+        <p class="msg success">{{ message }}</p>
+        <p><a href="{{ register_link }}">{{ register_link }}</a></p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h3>Kayıtlı Cihazlar</h3>
+    <table>
+        <thead><tr><th>ID</th><th>Employee ID</th><th>Token</th><th>Active</th></tr></thead>
+        <tbody>
+        {% for d in devices %}
+            <tr><td>{{ d.id }}</td><td>{{ d.employee_id }}</td><td>{{ d.device_token[:12] }}...</td><td>{{ d.active }}</td></tr>
+        {% else %}
+            <tr><td colspan="4">Kayıtlı cihaz yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Aktif Mesailer</h3>
+    <table>
+        <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Durum</th></tr></thead>
+        <tbody>
+        {% for t in active_entries %}
+            <tr><td>{{ t.employee_name }}</td><td>{{ t.vehicle_id }}</td><td>{{ t.start_time }}</td><td>{{ t.status }}</td></tr>
+        {% else %}
+            <tr><td colspan="4">Aktif mesai yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Tamamlanan Mesailer</h3>
+    <table>
+        <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Bitiş</th><th>Dk</th><th>Fazla</th></tr></thead>
+        <tbody>
+        {% for t in completed_entries %}
+            <tr><td>{{ t.employee_name }}</td><td>{{ t.vehicle_id }}</td><td>{{ t.start_time }}</td><td>{{ t.end_time }}</td><td>{{ t.total_minutes }}</td><td>{{ t.overtime_minutes }}</td></tr>
+        {% else %}
+            <tr><td colspan="6">Tamamlanan kayıt yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

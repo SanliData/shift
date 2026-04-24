@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="section-head">
+        <h2>Admin-Time Dashboard</h2>
+        <button class="btn btn-primary small" type="button" onclick="document.getElementById('employeeModal').showModal()">Yeni çalışan ekle</button>
+    </div>
+    <p class="muted">Europe/Berlin (Frankfurt): {{ berlin_now }}</p>
+    <div class="kpi-grid">
+        <article class="kpi-card"><span>Bugün</span><strong>{{ today_hours }} saat</strong></article>
+        <article class="kpi-card"><span>Bu hafta</span><strong>{{ week_hours }} saat</strong></article>
+        <article class="kpi-card"><span>Bu ay</span><strong>{{ month_hours }} saat</strong></article>
+        <article class="kpi-card"><span>Aktif Mesai</span><strong>{{ active_shift_count }}</strong></article>
+        <article class="kpi-card"><span>Bugün Maliyet</span><strong>{{ today_cost_eur }}</strong></article>
+        <article class="kpi-card"><span>Hafta Maliyet</span><strong>{{ week_cost_eur }}</strong></article>
+        <article class="kpi-card"><span>Ay Maliyet</span><strong>{{ month_cost_eur }}</strong></article>
+        <article class="kpi-card"><span>Ay Fazla Mesai Maliyeti</span><strong>{{ month_overtime_cost_eur }}</strong></article>
+    </div>
+    {% if missing_rate_employees %}
+    <p class="alert error">Saat ücreti tanımlanmamış: {{ missing_rate_employees|join(", ") }}</p>
+    {% endif %}
+    <form class="filters" method="get" action="/admin-time">
+        <div><label>Tarih Başlangıç</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
+        <div><label>Tarih Bitiş</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
+        <div>
+            <label>Çalışan</label>
+            <select name="employee_id"><option value="">Tümü</option>
+            {% for e in employees %}
+                <option value="{{ e.id }}" {% if filters.employee_id|string == e.id|string %}selected{% endif %}>{{ e.name }}</option>
+            {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Araç</label>
+            <select name="vehicle_id"><option value="">Tümü</option>
+            {% for v in vehicles %}
+                <option value="{{ v.id }}" {% if filters.vehicle_id|string == v.id|string %}selected{% endif %}>{{ v.qr_code_slug }}</option>
+            {% endfor %}
+            </select>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary small" type="submit">Filtrele</button>
+            <a class="btn btn-secondary small" href="/admin-time">Temizle</a>
+        </div>
+    </form>
+
+    <div class="export-links">
+        <a href="/admin-time/export">Excel Export</a>
+        <a href="/admin-time/reports">Raporlar</a>
+        <form method="get" action="/admin-time/reports/export" class="inline-actions">
+            <input type="month" name="month" required>
+            <button class="btn btn-primary small" type="submit">Aylık Toplu Excel Export</button>
+        </form>
+        <a href="/admin-time/import">Excel Import</a>
+        <a href="/admin-time/vehicles">Araç QR</a>
+    </div>
+    <div class="stats">
+        <div><strong>Toplam dk:</strong> {{ total_minutes }}</div>
+        <div><strong>Fazla dk:</strong> {{ overtime_minutes }}</div>
+    </div>
+</section>
+
+<section class="card">
+    <h3>Cihaz Kayıt Linki Oluştur</h3>
+    <form method="post" action="/admin-time/register-link">
+        <select name="employee_id" required>
+            <option value="">Çalışan seçin</option>
+            {% for e in employees %}
+            <option value="{{ e.id }}">{{ e.name }}{% if e.phone_number %} ({{ e.phone_number }}){% endif %}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary small" type="submit">Link Üret</button>
+    </form>
+    {% if register_link %}
+        <p class="msg success">{{ message }}</p>
+        <p><a href="{{ register_link }}">{{ register_link }}</a></p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h3>Çalışan Tablosu</h3>
+    <table>
+        <thead><tr><th>Çalışan</th><th>Telefon</th><th>Normal saat ücreti</th><th>Fazla mesai saat ücreti</th><th>Cihaz sayısı</th><th>Aktif/Pasif</th><th>Aktif mesai</th><th>Toplam saat</th><th>Kayıt Linki</th></tr></thead>
+        <tbody>
+        {% for e in employees %}
+            <tr>
+                <td>{{ e.name or "Bilinmiyor" }}</td>
+                <td>{{ e.phone_number or "-" }}</td>
+                <td>{% if e.hourly_rate %}€{{ "%.2f"|format(e.hourly_rate) }}{% else %}<span class="muted">Saat ücreti tanımlanmamış</span>{% endif %}</td>
+                <td>{% if e.overtime_hourly_rate is not none %}€{{ "%.2f"|format(e.overtime_hourly_rate) }}{% else %}€{{ "%.2f"|format((e.hourly_rate or 0) * (e.overtime_multiplier or 1.5)) }}{% endif %}</td>
+                <td>{{ device_counts.get(e.id, 0) }}</td>
+                <td>{% if e.active %}<span class="badge active">Aktif</span>{% else %}<span class="badge">Pasif</span>{% endif %}</td>
+                <td>{{ employee_active_map.get(e.id, 0) }}</td>
+                <td>{{ "%.2f"|format((employee_total_minutes_map.get(e.id, 0) / 60)) }}</td>
+                <td>
+                    <form method="post" action="/admin-time/register-link">
+                        <input type="hidden" name="employee_id" value="{{ e.id }}">
+                        <button class="btn btn-primary small" type="submit">Link Üret</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="9">Çalışan yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Çalışan Düzenleme</h3>
+    <table>
+        <thead><tr><th>Ad Soyad</th><th>Telefon</th><th>Normal saat ücreti (€)</th><th>Fazla mesai saat ücreti (€)</th><th>Durum</th><th>Kaydet</th></tr></thead>
+        <tbody>
+        {% for e in employees %}
+            <tr>
+                <form method="post" action="/admin-time/employees/{{ e.id }}/update">
+                    <td><input type="text" name="full_name" value="{{ e.name }}" required></td>
+                    <td><input type="text" name="phone_number" value="{{ e.phone_number or '' }}"></td>
+                    <td><input type="number" name="hourly_rate" min="0" step="0.01" value="{{ e.hourly_rate or 0 }}"></td>
+                    <td><input type="number" name="overtime_hourly_rate" min="0" step="0.01" value="{{ e.overtime_hourly_rate if e.overtime_hourly_rate is not none else '' }}" placeholder="Boşsa formül kullanılır"></td>
+                    <td>
+                        <select name="active">
+                            <option value="true" {% if e.active %}selected{% endif %}>Aktif</option>
+                            <option value="false" {% if not e.active %}selected{% endif %}>Pasif</option>
+                        </select>
+                    </td>
+                    <td><button class="btn btn-primary small" type="submit">Güncelle</button></td>
+                </form>
+            </tr>
+        {% else %}
+            <tr><td colspan="6">Çalışan yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Kayıtlı Cihazlar</h3>
+    <table>
+        <thead><tr><th>ID</th><th>Employee ID</th><th>Token</th><th>Active</th></tr></thead>
+        <tbody>
+        {% for d in devices %}
+            <tr><td>{{ d.id }}</td><td>{{ d.employee_id }}</td><td>{{ d.device_token[:12] }}...</td><td>{{ d.active }}</td></tr>
+        {% else %}
+            <tr><td colspan="4">Kayıtlı cihaz yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Aktif Mesailer</h3>
+    <table>
+        <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Durum</th></tr></thead>
+        <tbody>
+        {% for t in active_entries %}
+            <tr><td>{{ t.employee_name }}</td><td>{{ t.vehicle_id }}</td><td>{{ t.start_time }}</td><td>{{ t.status }}</td></tr>
+        {% else %}
+            <tr><td colspan="4">Aktif mesai yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Tamamlanan Mesailer</h3>
+    <table>
+        <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Bitiş</th><th>Dk</th><th>Fazla</th></tr></thead>
+        <tbody>
+        {% for t in completed_entries %}
+            <tr><td>{{ t.employee_name }}</td><td>{{ t.vehicle_id }}</td><td>{{ t.start_time }}</td><td>{{ t.end_time }}</td><td>{{ t.total_minutes }}</td><td>{{ t.overtime_minutes }}</td></tr>
+        {% else %}
+            <tr><td colspan="6">Tamamlanan kayıt yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<dialog id="employeeModal" class="modal">
+    <form method="post" action="/admin-time/employees" class="modal-card">
+        <h3>Yeni çalışan ekle</h3>
+        <label>Ad Soyad</label>
+        <input type="text" name="full_name" placeholder="Mehmet Yilmaz" required>
+        <label>Telefon Numarası</label>
+        <input type="text" name="phone_number" placeholder="+49 170 0000000" required>
+        <label>Normal Saat Ücreti (EUR)</label>
+        <input type="number" name="hourly_rate" min="0" step="0.01" value="0">
+        <label>Fazla Mesai Saat Ücreti (EUR)</label>
+        <input type="number" name="overtime_hourly_rate" min="0" step="0.01" value="">
+        <label>Durum</label>
+        <select name="active">
+            <option value="true">Aktif</option>
+            <option value="false">Pasif</option>
+        </select>
+        <div class="inline-actions">
+            <button class="btn btn-primary small" type="submit">Kaydet</button>
+            <button class="btn btn-secondary small" type="button" onclick="document.getElementById('employeeModal').close()">Vazgeç</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}

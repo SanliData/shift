@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card center">
+    <h2>{{ title }}</h2>
+    <p class="msg {% if ok %}success{% else %}error{% endif %}">{{ message }}</p>
+    <p>QR kod ile mesai sayfasına dönebilirsiniz.</p>
+</section>
+{% endblock %}

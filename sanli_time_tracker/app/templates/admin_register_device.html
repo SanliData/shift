@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Cihaz Kayıt Linki Oluştur</h2>
+    <form method="post" action="/admin/register-device">
+        <label for="employee_id">Çalışan</label>
+        <select id="employee_id" name="employee_id" required>
+            <option value="">Seçiniz</option>
+            {% for e in employees %}
+                <option value="{{ e.id }}">{{ e.name }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary" type="submit">Link Oluştur</button>
+    </form>
+
+    {% if message %}
+        <p class="msg success">{{ message }}</p>
+    {% endif %}
+    {% if register_link %}
+        <p><strong>Kayıt Linki:</strong></p>
+        <p><a href="{{ register_link }}">{{ register_link }}</a></p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card center">
+    <h2>Mesai Başlat / Mesai Bitir</h2>
+    <p><strong>Çalışan:</strong> {{ employee.name }}</p>
+    <p><strong>Araç:</strong> {{ vehicle.qr_code_slug }}</p>
+    {% if message %}<p class="msg success">{{ message }}</p>{% endif %}
+    {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+
+    {% if active_entry %}
+        <p class="badge active">Aktif mesai var: {{ active_entry.start_time }}</p>
+    {% else %}
+        <p class="badge">Aktif mesai yok</p>
+    {% endif %}
+
+    <div class="button-grid">
+        <form method="post" action="/time/start">
+            <input type="hidden" name="vehicle_slug" value="{{ vehicle.qr_code_slug }}">
+            <button class="btn btn-start" type="submit">Mesai Başlat</button>
+        </form>
+        <form method="post" action="/time/stop">
+            <input type="hidden" name="vehicle_slug" value="{{ vehicle.qr_code_slug }}">
+            <button class="btn btn-stop" type="submit">Mesai Bitir</button>
+        </form>
+    </div>
+</section>
+{% endblock %}

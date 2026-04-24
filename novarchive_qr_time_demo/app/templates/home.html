@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Local Development</h2>
+    <p>Şu an: {{ now_time }} (Europe/Berlin)</p>
+    <ul>
+        <li><a href="/time?vehicle=vehicle-01">/time?vehicle=vehicle-01</a></li>
+        <li><a href="/admin-time">/admin-time</a></li>
+        <li><a href="/ui/index.html">/ui/index.html</a></li>
+    </ul>
+</section>
+{% endblock %}

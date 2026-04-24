@@ -1,0 +1,162 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f6f8;
+  color: #223;
+}
+.topbar {
+  background: #0c2d57;
+  color: #fff;
+  padding: 14px 0;
+}
+.wrap {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.topbar .wrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.topbar h1 {
+  margin: 0;
+  font-size: 20px;
+}
+.topbar a {
+  color: #d8e7ff;
+  margin-left: 16px;
+  text-decoration: none;
+}
+.card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  margin: 18px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.center {
+  text-align: center;
+}
+.button-grid {
+  margin-top: 20px;
+  display: grid;
+  gap: 14px;
+}
+.btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 18px;
+  font-size: 26px;
+  font-weight: bold;
+  width: 100%;
+  cursor: pointer;
+}
+.btn-start {
+  background: #14a44d;
+  color: #fff;
+}
+.btn-stop {
+  background: #dc3545;
+  color: #fff;
+}
+.btn-primary {
+  margin-top: 12px;
+  background: #0d6efd;
+  color: #fff;
+  padding: 12px 16px;
+  font-size: 16px;
+}
+.btn-secondary {
+  background: #6c757d;
+  color: #fff;
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+.btn.small {
+  font-size: 14px;
+  padding: 10px 12px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  border: 1px solid #dfe3e8;
+  padding: 10px;
+  font-size: 14px;
+}
+th {
+  background: #eef3f8;
+}
+.msg {
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.success {
+  background: #e8f8ef;
+  color: #176d3d;
+}
+.error {
+  background: #fdecec;
+  color: #992222;
+}
+.badge {
+  display: inline-block;
+  background: #edf2f7;
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+.badge.active {
+  background: #fff2cc;
+}
+select,
+input {
+  width: 100%;
+  border: 1px solid #ccd3db;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 8px 0 12px;
+}
+.stats {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+.export-links {
+  margin: 8px 0 14px;
+}
+.export-links a {
+  margin-right: 14px;
+}
+.vehicle-qr-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.qr-image {
+  width: 170px;
+  height: 170px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}

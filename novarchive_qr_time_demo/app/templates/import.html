@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Excel Import</h2>
+    <form method="post" action="/admin-time/import" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xlsx,.xlsm" required>
+        <button class="btn btn-primary small" type="submit">Yükle</button>
+    </form>
+    {% if message %}<p class="msg success">{{ message }}</p>{% endif %}
+    {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+</section>
+
+<section class="card">
+    <h3>Imported Files</h3>
+    <table>
+        <thead><tr><th>Tarih</th><th>Dosya</th><th>Satır</th></tr></thead>
+        <tbody>
+        {% for f in files %}
+            <tr><td>{{ f.created_at }}</td><td>{{ f.filename }}</td><td>{{ f.imported_rows }}</td></tr>
+        {% else %}
+            <tr><td colspan="3">Dosya yok.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

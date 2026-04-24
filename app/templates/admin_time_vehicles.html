@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Araç QR Yönetimi</h2>
+    <p>QR kodlar sadece araç/iş makinesi içindir ve <code>/time?vehicle=vehicle_slug</code> formatına gider.</p>
+    {% if message %}<p class="msg success">{{ message }}</p>{% endif %}
+</section>
+
+<section class="card">
+    <h3>Yeni Araç / İş Makinesi Ekle</h3>
+    <form class="filters" method="post" action="/admin-time/vehicles">
+        <div>
+            <label>Araç Adı</label>
+            <input type="text" id="new_vehicle_name" name="name" placeholder="Excavator-02" required>
+        </div>
+        <div>
+            <label>Tip</label>
+            <input type="text" name="type" placeholder="excavator / truck / crew">
+        </div>
+        <div>
+            <label>QR Slug</label>
+            <input type="text" id="new_vehicle_slug" name="qr_code_slug" placeholder="Boş bırakırsanız otomatik üretilir">
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary small" type="submit">Araç Ekle</button>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <h3>Aktif Araçlar (QR Üretimi)</h3>
+    <div class="vehicle-grid">
+        {% for v in vehicles %}
+        <article class="card vehicle-card">
+            <h4>{{ v.name }}</h4>
+            <span class="badge">{{ v.type }}</span>
+            <img class="qr-thumb" src="{{ v.qr_img_url }}" alt="QR {{ v.slug }}">
+            <p class="muted">{{ v.slug }}</p>
+            <a class="btn btn-primary small" href="{{ v.qr_download_url }}" download="qr-{{ v.slug }}-print.png">Download QR</a>
+        </article>
+        {% else %}
+        <p>Aktif araç bulunamadı.</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="card">
+    <h3>Tüm Araçlar (Düzenle / Durum Yönetimi)</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Ad</th>
+                <th>Tip</th>
+                <th>Slug</th>
+                <th>Durum</th>
+                <th>İşlem</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in all_vehicles %}
+            <tr>
+                <td>{{ v.id }}</td>
+                <td>
+                    <form class="inline-form" method="post" action="/admin-time/vehicles/{{ v.id }}/update">
+                        <input type="text" name="name" value="{{ v.name }}" required>
+                </td>
+                <td><input type="text" name="type" value="{{ v.type }}"></td>
+                <td><input type="text" name="qr_code_slug" value="{{ v.slug }}" required></td>
+                <td>{% if v.active %}Aktif{% else %}Pasif{% endif %}</td>
+                <td class="inline-actions">
+                        <button class="btn btn-primary small" type="submit">Güncelle</button>
+                    </form>
+                    {% if v.active %}
+                    <form method="post" action="/admin-time/vehicles/{{ v.id }}/deactivate">
+                        <button class="btn btn-secondary small" type="submit">Pasifleştir</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/admin-time/vehicles/{{ v.id }}/activate">
+                        <button class="btn btn-primary small" type="submit">Tekrar Aktif Et</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">Araç bulunamadı.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<script>
+    const nameInput = document.getElementById("new_vehicle_name");
+    const slugInput = document.getElementById("new_vehicle_slug");
+    if (nameInput && slugInput) {
+        nameInput.addEventListener("input", () => {
+            if (slugInput.value.trim() !== "") return;
+            const slug = nameInput.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+            slugInput.placeholder = slug || "Boş bırakırsanız otomatik üretilir";
+        });
+    }
+</script>
+{% endblock %}

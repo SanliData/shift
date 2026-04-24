@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card time-page">
+    {% if ok %}
+        <h2>Cihaz başarıyla kaydedildi</h2>
+        <p class="alert success">{{ message or "Kayıt tamamlandı." }}</p>
+        {% if employee_name %}
+        <p><strong>Çalışan:</strong> {{ employee_name }}</p>
+        {% endif %}
+        {% if employee_phone %}
+        <p><strong>Telefon:</strong> {{ employee_phone }}</p>
+        {% endif %}
+        <a class="btn btn-primary" href="/time?vehicle=vehicle-01">Mesai ekranına git</a>
+    {% else %}
+        <h2>Kayıt başarısız</h2>
+        <p class="alert error">{{ message or "Bilinmeyen hata." }}</p>
+    {% endif %}
+</section>
+{% endblock %}

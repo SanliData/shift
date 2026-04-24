@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Admin-Time Dashboard</h2>
+    <div class="stats">
+        <div><strong>Toplam Çalışan:</strong> {{ employee_count }}</div>
+        <div><strong>Bugün Aktif Mesai:</strong> {{ active_today }}</div>
+        <div><strong>Bu Ay Toplam Saat:</strong> {{ month_hours }}</div>
+        <div><strong>Bu Ay Fazla Mesai:</strong> {{ month_overtime_hours }}</div>
+    </div>
+</section>
+
+<section class="card">
+    <h3>Araç Bazlı Çalışma Saatleri</h3>
+    <table>
+        <thead><tr><th>Araç</th><th>Saat</th></tr></thead>
+        <tbody>
+            {% for v, mins in vehicle_rows %}
+            <tr><td>{{ v }}</td><td>{{ (mins / 60)|round(2) }}</td></tr>
+            {% else %}
+            <tr><td colspan="2">Veri yok.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Çalışan Bazlı Toplam Saat</h3>
+    <table>
+        <thead><tr><th>Çalışan</th><th>Saat</th></tr></thead>
+        <tbody>
+            {% for name, mins in employee_rows %}
+            <tr><td>{{ name }}</td><td>{{ (mins / 60)|round(2) }}</td></tr>
+            {% else %}
+            <tr><td colspan="2">Veri yok.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h3>Ay Bazlı Özet</h3>
+    <table>
+        <thead>
+            <tr><th>Yıl</th><th>Ay</th><th>Toplam Saat</th><th>Fazla Mesai Saat</th><th>Eksik Çıkış</th></tr>
+        </thead>
+        <tbody>
+            {% for m in monthly_rows %}
+            <tr>
+                <td>{{ m.year }}</td>
+                <td>{{ m.month }}</td>
+                <td>{{ (m.total_minutes / 60)|round(2) }}</td>
+                <td>{{ (m.overtime_minutes / 60)|round(2) }}</td>
+                <td>{{ m.missing_checkout_entries }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">Özet verisi yok.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

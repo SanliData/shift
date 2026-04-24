@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Excel Import (Demo)</h2>
+    <p>Desteklenen dosyalar:</p>
+    <ul>
+        <li><code>personel_analytics_production_ready.xlsx</code></li>
+        <li><code>altyapi_yonetim_sistemi.xlsx</code></li>
+    </ul>
+    <form method="post" action="/admin-time/import" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xlsx,.xlsm,.xltx,.xltm" required>
+        <button class="btn btn-primary small" type="submit">İçeri Al</button>
+    </form>
+    {% if message %}<p class="msg success">{{ message }}</p>{% endif %}
+    {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+</section>
+
+<section class="card">
+    <h3>Son Import Kayıtları</h3>
+    <table>
+        <thead>
+            <tr><th>Zaman</th><th>Dosya</th><th>Tip</th><th>Satır</th></tr>
+        </thead>
+        <tbody>
+            {% for f in recent_imports %}
+            <tr>
+                <td>{{ f.created_at }}</td>
+                <td>{{ f.filename }}</td>
+                <td>{{ f.source_type }}</td>
+                <td>{{ f.imported_rows }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">Henüz import yok.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

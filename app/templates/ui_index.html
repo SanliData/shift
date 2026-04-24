@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card hero">
+    <div>
+        <h2>Erişim Yetkisi Gerekli</h2>
+        <p class="muted">Bu cihaz henüz kayıtlı değil. Lütfen admin tarafından üretilen cihaz kayıt linkini açın.</p>
+        <ul class="check-list">
+            <li>Cihaz kaydı tamamlandıktan sonra QR okutabilirsiniz.</li>
+            <li>Mesai ekranı sadece kayıtlı cihazlarda açılır.</li>
+            <li>Saat dilimi: Europe/Berlin (Frankfurt)</li>
+        </ul>
+    </div>
+    <div class="clock-card">
+        <h3>Hızlı Test</h3>
+        <p>/time?vehicle=vehicle-01</p>
+        <a class="btn btn-primary small" href="/time?vehicle=vehicle-01">Mesai linkini dene</a>
+    </div>
+</section>
+{% endblock %}

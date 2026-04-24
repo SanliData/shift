@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NOVARCHIVE QR Time Demo</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+        <div class="brand">
+            <div class="brand-title">NOVARCHIVE</div>
+            <div class="brand-subtitle">QR TIME DEMO</div>
+        </div>
+        <nav class="side-nav">
+            <a class="{% if request.url.path == '/' %}active{% endif %}" href="/">Ana Sayfa</a>
+            <a class="{% if request.url.path.startswith('/admin-time') and not request.url.path.startswith('/admin-time/import') and not request.url.path.startswith('/admin-time/vehicles') and not request.url.path.startswith('/admin-time/reports') %}active{% endif %}" href="/admin-time">Admin-Time</a>
+            <a class="{% if request.url.path.startswith('/admin-time/reports') %}active{% endif %}" href="/admin-time/reports">Reports</a>
+            <a class="{% if request.url.path.startswith('/admin-time/import') %}active{% endif %}" href="/admin-time/import">Import</a>
+            <a class="{% if request.url.path.startswith('/admin-time/vehicles') %}active{% endif %}" href="/admin-time/vehicles">Vehicles QR</a>
+        </nav>
+    </aside>
+    <div class="main-panel">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="menu-btn" type="button" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+                <div class="page-path">{{ request.url.path }}</div>
+            </div>
+            <details class="admin-dropdown">
+                <summary>Admin ▾</summary>
+                <div class="dropdown-menu">
+                    <a href="/admin-time">Admin-Time</a>
+                    <a href="/admin-time/reports">Reports</a>
+                    <a href="/admin-time/vehicles">Vehicles QR</a>
+                    <a href="/admin-time/import">Import</a>
+                </div>
+            </details>
+        </header>
+        <main class="content">
+            <div class="content-inner">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</div>
+</body>
+</html>
