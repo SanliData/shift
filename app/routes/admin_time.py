@@ -129,20 +129,39 @@ def ensure_registration_token_columns(db: Session):
         db.execute(text("UPDATE registration_tokens SET used = 0 WHERE used IS NULL"))
         db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
         db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
+        employee_ids = db.execute(text("SELECT DISTINCT employee_id FROM registration_tokens")).fetchall()
+        for row in employee_ids:
+            employee_id = int(row[0])
+            valid_rows = db.scalars(
+                select(RegistrationToken)
+                .where(
+                    RegistrationToken.employee_id == employee_id,
+                    RegistrationToken.active.is_(True),
+                    RegistrationToken.used.is_(False),
+                )
+                .order_by(desc(RegistrationToken.created_at), desc(RegistrationToken.id))
+            ).all()
+            for old in valid_rows[1:]:
+                old.active = False
         db.commit()
     REG_TOKEN_MIGRATION_DONE = True
 
 
 def get_active_registration_token(db: Session, employee_id: int) -> RegistrationToken | None:
-    return db.scalar(
+    rows = db.scalars(
         select(RegistrationToken)
         .where(
             RegistrationToken.employee_id == employee_id,
             RegistrationToken.active.is_(True),
             RegistrationToken.used.is_(False),
         )
-        .order_by(desc(RegistrationToken.created_at))
-    )
+        .order_by(desc(RegistrationToken.created_at), desc(RegistrationToken.id))
+    ).all()
+    if not rows:
+        return None
+    for old in rows[1:]:
+        old.active = False
+    return rows[0]
 
 
 def get_latest_registration_token(db: Session, employee_id: int) -> RegistrationToken | None:
@@ -184,6 +203,21 @@ def create_registration_token(db: Session, employee_id: int, *, deactivate_exist
         new_row.active,
     )
     return new_row
+
+
+def get_or_create_valid_registration_token(
+    db: Session,
+    employee_id: int,
+    *,
+    regenerate: bool = False,
+) -> RegistrationToken | None:
+    employee = db.scalar(select(Employee).where(Employee.id == employee_id))
+    if not employee or not employee.active:
+        return None
+    token_row = get_active_registration_token(db, employee_id)
+    if regenerate or not token_row:
+        token_row = create_registration_token(db, employee_id, deactivate_existing=True)
+    return token_row
 
 
 def render_admin_time(
@@ -428,12 +462,9 @@ def update_employee(
 @router.post("/admin-time/register-link", response_class=HTMLResponse)
 def create_register_link(request: Request, employee_id: int = Form(...), db: Session = Depends(get_db)):
     ensure_registration_token_columns(db)
-    employee = db.scalar(select(Employee).where(Employee.id == employee_id))
-    if not employee:
-        return render_admin_time(request, db, message="Çalışan bulunamadı.")
-    row = get_active_registration_token(db, employee_id)
+    row = get_or_create_valid_registration_token(db, employee_id)
     if not row:
-        row = create_registration_token(db, employee_id, deactivate_existing=True)
+        return render_admin_time(request, db, message="Çalışan bulunamadı veya pasif.")
     db.commit()
     link = build_register_link(row.token)
     logger.debug(
@@ -456,13 +487,9 @@ def employee_device_link(
     employee = db.scalar(select(Employee).where(Employee.id == employee_id))
     if not employee:
         return RedirectResponse("/admin-time?message=Çalışan+bulunamadı.", status_code=303)
-    token_row = get_active_registration_token(db, employee_id)
-    # Safety guard: never reuse used tokens, even if legacy data is inconsistent.
-    if token_row and token_row.used:
-        token_row.active = False
-        token_row = None
+    token_row = get_or_create_valid_registration_token(db, employee_id)
     if not token_row:
-        token_row = create_registration_token(db, employee_id, deactivate_existing=True)
+        return RedirectResponse("/admin-time?message=Çalışan+pasif.", status_code=303)
     register_link = build_register_link(token_row.token)
     phone_digits = normalize_phone_digits(employee.phone_number)
     channel_name = (channel or "").lower()
@@ -482,6 +509,7 @@ def employee_device_link(
         "active": bool(token_row.active and (not token_row.used)),
         "used": bool(token_row.used),
         "register_link": register_link,
+        "created_at": token_row.created_at.isoformat() if token_row.created_at else None,
         "last_sent_at": token_row.last_sent_at.isoformat() if token_row.last_sent_at else None,
     }
 
@@ -497,7 +525,9 @@ def regenerate_employee_link(
     employee = db.scalar(select(Employee).where(Employee.id == employee_id))
     if not employee:
         return render_admin_time(request, db, message="Çalışan bulunamadı.")
-    row = create_registration_token(db, employee_id, deactivate_existing=True)
+    row = get_or_create_valid_registration_token(db, employee_id, regenerate=True)
+    if not row:
+        return render_admin_time(request, db, message="Çalışan pasif.")
     register_link = build_register_link(row.token)
     phone_digits = normalize_phone_digits(employee.phone_number)
     channel_name = (channel or "").lower()

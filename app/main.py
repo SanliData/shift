@@ -73,6 +73,19 @@ def seed_data():
             db.execute(text("UPDATE registration_tokens SET used = 0 WHERE used IS NULL"))
             db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
             db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
+            employee_ids = db.execute(text("SELECT DISTINCT employee_id FROM registration_tokens")).fetchall()
+            for row in employee_ids:
+                employee_id = int(row[0])
+                valid_rows = db.execute(
+                    text(
+                        "SELECT id FROM registration_tokens "
+                        "WHERE employee_id = :employee_id AND active = 1 AND used = 0 "
+                        "ORDER BY created_at DESC, id DESC"
+                    ),
+                    {"employee_id": employee_id},
+                ).fetchall()
+                for old in valid_rows[1:]:
+                    db.execute(text("UPDATE registration_tokens SET active = 0 WHERE id = :id"), {"id": int(old[0])})
             db.commit()
 
         if (db.scalar(select(func.count(Employee.id))) or 0) == 0:
