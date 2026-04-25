@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 from datetime import datetime, timedelta
 from secrets import token_urlsafe
@@ -22,6 +23,7 @@ BERLIN_TZ = ZoneInfo(TIMEZONE)
 DEVICE_COOKIE = "device_token"
 BASE_TIME_URL = f"{BASE_URL}/time"
 REG_TOKEN_MIGRATION_DONE = False
+logger = logging.getLogger(__name__)
 
 
 def now_berlin() -> datetime:
@@ -125,6 +127,7 @@ def ensure_registration_token_columns(db: Session):
         db.commit()
     if cols:
         db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
+        db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
         db.commit()
     REG_TOKEN_MIGRATION_DONE = True
 
@@ -137,6 +140,14 @@ def get_active_registration_token(db: Session, employee_id: int) -> Registration
             RegistrationToken.active.is_(True),
             RegistrationToken.used.is_(False),
         )
+        .order_by(desc(RegistrationToken.created_at))
+    )
+
+
+def get_latest_registration_token(db: Session, employee_id: int) -> RegistrationToken | None:
+    return db.scalar(
+        select(RegistrationToken)
+        .where(RegistrationToken.employee_id == employee_id)
         .order_by(desc(RegistrationToken.created_at))
     )
 
@@ -161,6 +172,13 @@ def create_registration_token(db: Session, employee_id: int, *, deactivate_exist
     )
     db.add(new_row)
     db.flush()
+    logger.debug(
+        "registration token created employee_id=%s token=%s used=%s active=%s",
+        employee_id,
+        token_value,
+        new_row.used,
+        new_row.active,
+    )
     return new_row
 
 
@@ -237,15 +255,18 @@ def render_admin_time(
     employee_actions: dict[int, dict[str, str]] = {}
     for emp in employees:
         token_row = get_active_registration_token(db, emp.id)
+        latest_token = get_latest_registration_token(db, emp.id)
         if not token_row:
+            token_status = "kullanılmış token" if (latest_token and latest_token.used) else "token yok"
+            last_sent = as_berlin(latest_token.last_sent_at).strftime("%d.%m.%Y %H:%M") if (latest_token and latest_token.last_sent_at) else "-"
             employee_actions[emp.id] = {
                 "register_link": "",
                 "wa_url": "",
                 "sms_uri": "",
                 "phone_digits": "",
-                "token_status": "Yok",
+                "token_status": token_status,
                 "token_active": False,
-                "last_sent_at": "",
+                "last_sent_at": last_sent,
                 "resend_wa_url": f"/admin-time/employees/{emp.id}/device-link?channel=whatsapp",
                 "resend_sms_url": f"/admin-time/employees/{emp.id}/device-link?channel=sms",
                 "link_url": f"/admin-time/employees/{emp.id}/device-link",
@@ -262,7 +283,7 @@ def render_admin_time(
             "wa_url": wa_url,
             "sms_uri": sms_uri,
             "phone_digits": digits,
-            "token_status": "Var",
+            "token_status": "aktif kullanılmamış token var",
             "token_active": True,
             "last_sent_at": last_sent,
             "resend_wa_url": f"/admin-time/employees/{emp.id}/device-link?channel=whatsapp",
@@ -411,6 +432,13 @@ def create_register_link(request: Request, employee_id: int = Form(...), db: Ses
         row = create_registration_token(db, employee_id, deactivate_existing=True)
     db.commit()
     link = build_register_link(row.token)
+    logger.debug(
+        "register link ready employee_id=%s token=%s used=%s active=%s",
+        employee_id,
+        row.token,
+        row.used,
+        row.active,
+    )
     return render_admin_time(request, db, register_link=link, message="Kayıt linki oluşturuldu.")
 
 
@@ -485,8 +513,46 @@ def regenerate_employee_link(
 @router.get("/register-device", response_class=HTMLResponse)
 def register_device(request: Request, token: str, db: Session = Depends(get_db)):
     ensure_registration_token_columns(db)
-    reg = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token))
-    if not reg or reg.used or not reg.active:
+    clean_token = (token or "").strip()
+    logger.debug("register-device request token=%s", clean_token)
+    reg = db.scalar(
+        select(RegistrationToken)
+        .join(Employee, Employee.id == RegistrationToken.employee_id)
+        .where(
+            RegistrationToken.token == clean_token,
+            RegistrationToken.used.is_(False),
+            RegistrationToken.active.is_(True),
+            Employee.active.is_(True),
+        )
+    )
+    if not reg:
+        debug_row = db.scalar(select(RegistrationToken).where(RegistrationToken.token == clean_token))
+        debug_employee_id = debug_row.employee_id if debug_row else None
+        debug_used = debug_row.used if debug_row else None
+        debug_active = debug_row.active if debug_row else None
+        debug_emp_active = None
+        if debug_employee_id:
+            dbg_emp = db.scalar(select(Employee).where(Employee.id == debug_employee_id))
+            debug_emp_active = dbg_emp.active if dbg_emp else None
+        reason = "not_found"
+        if not clean_token:
+            reason = "empty_token"
+        elif debug_row and debug_row.used:
+            reason = "used_true"
+        elif debug_row and not debug_row.active:
+            reason = "token_not_active"
+        elif debug_row and debug_emp_active is False:
+            reason = "employee_inactive"
+        logger.debug(
+            "register-device rejected token=%s found=%s used=%s active=%s employee_id=%s employee_active=%s reason=%s",
+            clean_token,
+            bool(debug_row),
+            debug_used,
+            debug_active,
+            debug_employee_id,
+            debug_emp_active,
+            reason,
+        )
         return templates.TemplateResponse(
             request=request,
             name="register_status.html",
@@ -503,6 +569,13 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
     )
     reg.used = True
     reg.active = False
+    logger.debug(
+        "register-device success token=%s employee_id=%s used=%s active=%s",
+        clean_token,
+        reg.employee_id,
+        reg.used,
+        reg.active,
+    )
     db.commit()
     employee = db.scalar(select(Employee).where(Employee.id == reg.employee_id))
     default_vehicle = db.scalar(select(Vehicle).where(Vehicle.active.is_(True)).order_by(Vehicle.qr_code_slug))

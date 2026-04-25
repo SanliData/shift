@@ -71,6 +71,7 @@ def seed_data():
             db.commit()
         if reg_token_cols:
             db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
+            db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
             db.commit()
 
         if (db.scalar(select(func.count(Employee.id))) or 0) == 0:

@@ -100,7 +100,7 @@
                     <form method="get" action="{{ act.link_url }}" class="inline-actions">
                         <button class="btn btn-primary small" type="submit">Kayıt Linki Üret</button>
                     </form>
-                    <p class="muted small">Aktif token: <strong>{{ act.token_status }}</strong></p>
+                    <p class="muted small">Token durumu: <strong>{{ act.token_status }}</strong></p>
                     <p class="muted small">Son gönderim: <strong>{{ act.last_sent_at or "-" }}</strong></p>
                     {% if act.token_active and act.wa_url %}
                     <a class="btn btn-secondary small" href="{{ act.resend_wa_url }}" target="_blank" rel="noopener" onclick="showToast('Link tekrar gönderildi')">Tekrar Gönder (WhatsApp)</a>
