@@ -24,6 +24,7 @@ DEVICE_COOKIE = "device_token"
 BASE_TIME_URL = f"{BASE_URL}/time"
 REG_TOKEN_MIGRATION_DONE = False
 logger = logging.getLogger(__name__)
+PREVIEW_UA_MARKERS = ("whatsapp", "facebookexternalhit", "meta", "telegrambot")
 
 
 def now_berlin() -> datetime:
@@ -218,6 +219,27 @@ def get_or_create_valid_registration_token(
     if regenerate or not token_row:
         token_row = create_registration_token(db, employee_id, deactivate_existing=True)
     return token_row
+
+
+def get_registerable_token(db: Session, raw_token: str) -> RegistrationToken | None:
+    clean_token = (raw_token or "").strip()
+    return db.scalar(
+        select(RegistrationToken)
+        .join(Employee, Employee.id == RegistrationToken.employee_id)
+        .where(
+            RegistrationToken.token == clean_token,
+            RegistrationToken.used.is_(False),
+            RegistrationToken.active.is_(True),
+            Employee.active.is_(True),
+        )
+    )
+
+
+def is_preview_request(request: Request) -> bool:
+    if request.method.upper() == "HEAD":
+        return True
+    ua = (request.headers.get("user-agent") or "").lower()
+    return any(marker in ua for marker in PREVIEW_UA_MARKERS)
 
 
 def render_admin_time(
@@ -554,16 +576,10 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
     ensure_registration_token_columns(db)
     clean_token = (token or "").strip()
     logger.debug("register-device request token=%s", clean_token)
-    reg = db.scalar(
-        select(RegistrationToken)
-        .join(Employee, Employee.id == RegistrationToken.employee_id)
-        .where(
-            RegistrationToken.token == clean_token,
-            RegistrationToken.used.is_(False),
-            RegistrationToken.active.is_(True),
-            Employee.active.is_(True),
-        )
-    )
+    reg = get_registerable_token(db, clean_token)
+    if is_preview_request(request):
+        logger.debug("register-device preview request method=%s ua=%s", request.method, request.headers.get("user-agent", ""))
+        return HTMLResponse("<html><body>Kayıt linki hazır. Lütfen linke tıklayın.</body></html>", status_code=200)
     if not reg:
         debug_row = db.scalar(select(RegistrationToken).where(RegistrationToken.token == clean_token))
         debug_employee_id = debug_row.employee_id if debug_row else None
@@ -592,6 +608,34 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
             debug_emp_active,
             reason,
         )
+        return templates.TemplateResponse(
+            request=request,
+            name="register_status.html",
+            context={"request": request, "ok": False, "message": "Geçersiz veya kullanılmış token."},
+        )
+    employee = db.scalar(select(Employee).where(Employee.id == reg.employee_id))
+    return templates.TemplateResponse(
+        request=request,
+        name="register_status.html",
+        context={
+            "request": request,
+            "ok": True,
+            "awaiting_confirm": True,
+            "message": "Kayıt linki hazır. Cihazı kaydet butonuna basın.",
+            "token": clean_token,
+            "employee_name": employee.name if employee else "",
+            "employee_phone": employee.phone_number if employee else "",
+        },
+    )
+
+
+@router.post("/register-device/confirm", response_class=HTMLResponse)
+def register_device_confirm(request: Request, token: str = Form(...), db: Session = Depends(get_db)):
+    ensure_registration_token_columns(db)
+    clean_token = (token or "").strip()
+    logger.debug("register-device confirm token=%s", clean_token)
+    reg = get_registerable_token(db, clean_token)
+    if not reg:
         return templates.TemplateResponse(
             request=request,
             name="register_status.html",
@@ -626,6 +670,7 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
         context={
             "request": request,
             "ok": True,
+            "awaiting_confirm": False,
             "message": "Cihaz başarıyla kaydedildi.",
             "employee_name": employee.name if employee else "",
             "employee_phone": employee.phone_number if employee else "",

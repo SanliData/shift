@@ -2,15 +2,27 @@
 {% block content %}
 <section class="card time-page">
     {% if ok %}
+        {% if awaiting_confirm %}
+        <h2>Cihaz Kaydı</h2>
+        <p class="alert success">{{ message or "Kayıt linki hazır." }}</p>
+        {% else %}
         <h2>Cihaz başarıyla kaydedildi</h2>
         <p class="alert success">{{ message or "Kayıt tamamlandı." }}</p>
+        {% endif %}
         {% if employee_name %}
         <p><strong>Çalışan:</strong> {{ employee_name }}</p>
         {% endif %}
         {% if employee_phone %}
         <p><strong>Telefon:</strong> {{ employee_phone }}</p>
         {% endif %}
+        {% if awaiting_confirm %}
+        <form method="post" action="/register-device/confirm" class="inline-actions" style="justify-content:center;">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button class="btn btn-primary" type="submit">Cihazı kaydet</button>
+        </form>
+        {% else %}
         <a class="btn btn-primary" href="{{ time_entry_url or '/time?vehicle=vehicle-01' }}">Mesai ekranına git</a>
+        {% endif %}
     {% else %}
         <h2>Kayıt başarısız</h2>
         <p class="alert error">{{ message or "Bilinmeyen hata." }}</p>

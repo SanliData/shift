@@ -107,8 +107,10 @@ def test_register_device_success_then_second_use_rejected():
             payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
             token = payload["token"]
             first = client.get(f"/register-device?token={token}")
-            second = client.get(f"/register-device?token={token}")
-        assert "Cihaz başarıyla kaydedildi" in first.text
+            confirm = client.post("/register-device/confirm", data={"token": token})
+            second = client.post("/register-device/confirm", data={"token": token})
+        assert "Cihazı kaydet" in first.text
+        assert "Cihaz başarıyla kaydedildi" in confirm.text
         assert "Geçersiz veya kullanılmış token" in second.text
         with SessionLocal() as db:
             row = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token))
@@ -128,5 +130,25 @@ def test_register_device_failure_does_not_consume_valid_token():
         with SessionLocal() as db:
             row = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token))
             assert row is not None and row.used is False and row.active is True
+    finally:
+        _cleanup_employee(employee_id)
+
+
+def test_link_preview_does_not_consume_token():
+    employee_id = _create_employee("Preview User")
+    try:
+        with TestClient(app) as client:
+            payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
+            token = payload["token"]
+            preview = client.get(
+                f"/register-device?token={token}",
+                headers={"user-agent": "WhatsApp/2.24"},
+            )
+            assert "Kayıt linki hazır. Lütfen linke tıklayın." in preview.text
+            with SessionLocal() as db:
+                row = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token))
+                assert row is not None and row.used is False and row.active is True
+            confirm = client.post("/register-device/confirm", data={"token": token})
+            assert "Cihaz başarıyla kaydedildi" in confirm.text
     finally:
         _cleanup_employee(employee_id)
