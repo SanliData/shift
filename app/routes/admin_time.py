@@ -126,6 +126,7 @@ def ensure_registration_token_columns(db: Session):
         db.execute(text("ALTER TABLE registration_tokens ADD COLUMN last_sent_at DATETIME"))
         db.commit()
     if cols:
+        db.execute(text("UPDATE registration_tokens SET used = 0 WHERE used IS NULL"))
         db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
         db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
         db.commit()
@@ -172,6 +173,9 @@ def create_registration_token(db: Session, employee_id: int, *, deactivate_exist
     )
     db.add(new_row)
     db.flush()
+    # Defensive write for legacy SQLite rows/default anomalies.
+    new_row.used = False
+    new_row.active = True
     logger.debug(
         "registration token created employee_id=%s token=%s used=%s active=%s",
         employee_id,

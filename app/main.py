@@ -70,6 +70,7 @@ def seed_data():
             db.execute(text("ALTER TABLE registration_tokens ADD COLUMN last_sent_at DATETIME"))
             db.commit()
         if reg_token_cols:
+            db.execute(text("UPDATE registration_tokens SET used = 0 WHERE used IS NULL"))
             db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
             db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
             db.commit()
