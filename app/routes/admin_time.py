@@ -7,9 +7,9 @@ from zoneinfo import ZoneInfo
 
 import qrcode
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import BASE_URL, COOKIE_SECURE, TIMEZONE
@@ -21,6 +21,7 @@ templates = Jinja2Templates(directory="app/templates")
 BERLIN_TZ = ZoneInfo(TIMEZONE)
 DEVICE_COOKIE = "device_token"
 BASE_TIME_URL = f"{BASE_URL}/time"
+REG_TOKEN_MIGRATION_DONE = False
 
 
 def now_berlin() -> datetime:
@@ -110,6 +111,59 @@ def build_sms_uri(phone_digits: str, register_link: str) -> str:
     return f"sms:+{phone_digits}?body={quote(body)}"
 
 
+def ensure_registration_token_columns(db: Session):
+    global REG_TOKEN_MIGRATION_DONE
+    if REG_TOKEN_MIGRATION_DONE:
+        return
+    cols = db.execute(text("PRAGMA table_info(registration_tokens)")).fetchall()
+    col_names = {c[1] for c in cols}
+    if cols and "active" not in col_names:
+        db.execute(text("ALTER TABLE registration_tokens ADD COLUMN active BOOLEAN DEFAULT 1"))
+        db.commit()
+    if cols and "last_sent_at" not in col_names:
+        db.execute(text("ALTER TABLE registration_tokens ADD COLUMN last_sent_at DATETIME"))
+        db.commit()
+    if cols:
+        db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
+        db.commit()
+    REG_TOKEN_MIGRATION_DONE = True
+
+
+def get_active_registration_token(db: Session, employee_id: int) -> RegistrationToken | None:
+    return db.scalar(
+        select(RegistrationToken)
+        .where(
+            RegistrationToken.employee_id == employee_id,
+            RegistrationToken.active.is_(True),
+            RegistrationToken.used.is_(False),
+        )
+        .order_by(desc(RegistrationToken.created_at))
+    )
+
+
+def create_registration_token(db: Session, employee_id: int, *, deactivate_existing: bool) -> RegistrationToken:
+    if deactivate_existing:
+        tokens = db.scalars(
+            select(RegistrationToken).where(
+                RegistrationToken.employee_id == employee_id,
+                RegistrationToken.active.is_(True),
+            )
+        ).all()
+        for row in tokens:
+            row.active = False
+    token_value = token_urlsafe(24)
+    new_row = RegistrationToken(
+        employee_id=employee_id,
+        token=token_value,
+        active=True,
+        used=False,
+        created_at=now_berlin(),
+    )
+    db.add(new_row)
+    db.flush()
+    return new_row
+
+
 def render_admin_time(
     request: Request,
     db: Session,
@@ -121,6 +175,7 @@ def render_admin_time(
     register_link: str = "",
     message: str = "",
 ):
+    ensure_registration_token_columns(db)
     employees = db.scalars(select(Employee).order_by(Employee.name)).all()
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.qr_code_slug)).all()
     devices = db.scalars(
@@ -181,23 +236,39 @@ def render_admin_time(
     missing_rate_employees = [e.name for e in employees if float(e.hourly_rate or 0) <= 0]
     employee_actions: dict[int, dict[str, str]] = {}
     for emp in employees:
-        token_row = db.scalar(
-            select(RegistrationToken)
-            .where(RegistrationToken.employee_id == emp.id, RegistrationToken.used.is_(False))
-            .order_by(desc(RegistrationToken.created_at))
-        )
+        token_row = get_active_registration_token(db, emp.id)
         if not token_row:
-            employee_actions[emp.id] = {"register_link": "", "wa_url": "", "sms_uri": "", "phone_digits": ""}
+            employee_actions[emp.id] = {
+                "register_link": "",
+                "wa_url": "",
+                "sms_uri": "",
+                "phone_digits": "",
+                "token_status": "Yok",
+                "token_active": False,
+                "last_sent_at": "",
+                "resend_wa_url": f"/admin-time/employees/{emp.id}/device-link?channel=whatsapp",
+                "resend_sms_url": f"/admin-time/employees/{emp.id}/device-link?channel=sms",
+                "link_url": f"/admin-time/employees/{emp.id}/device-link",
+                "regenerate_url": f"/admin-time/employees/{emp.id}/regenerate-link",
+            }
             continue
         register_link_value = build_register_link(token_row.token)
         digits = normalize_phone_digits(emp.phone_number)
         wa_url = build_whatsapp_link(digits, register_link_value) if digits else ""
         sms_uri = build_sms_uri(digits, register_link_value) if digits else ""
+        last_sent = as_berlin(token_row.last_sent_at).strftime("%d.%m.%Y %H:%M") if token_row.last_sent_at else "-"
         employee_actions[emp.id] = {
             "register_link": register_link_value,
             "wa_url": wa_url,
             "sms_uri": sms_uri,
             "phone_digits": digits,
+            "token_status": "Var",
+            "token_active": True,
+            "last_sent_at": last_sent,
+            "resend_wa_url": f"/admin-time/employees/{emp.id}/device-link?channel=whatsapp",
+            "resend_sms_url": f"/admin-time/employees/{emp.id}/device-link?channel=sms",
+            "link_url": f"/admin-time/employees/{emp.id}/device-link",
+            "regenerate_url": f"/admin-time/employees/{emp.id}/regenerate-link",
         }
     totals = db.execute(
         select(
@@ -305,7 +376,7 @@ def update_employee(
     employee_id: int,
     full_name: str = Form(...),
     phone_number: str = Form(""),
-    hourly_rate: float = Form(0),
+    hourly_rate: str = Form(""),
     overtime_hourly_rate: str = Form(""),
     overtime_multiplier: float = Form(1.5),
     active: str = Form("true"),
@@ -314,37 +385,108 @@ def update_employee(
     employee = db.scalar(select(Employee).where(Employee.id == employee_id))
     if not employee:
         return render_admin_time(request, db, message="Çalışan bulunamadı.")
-    employee.name = full_name.strip() or employee.name
+    name = full_name.strip()
+    if not name:
+        return render_admin_time(request, db, message="Ad soyad boş olamaz.")
+    employee.name = name
     employee.phone_number = phone_number.strip() or None
-    employee.hourly_rate = max(0, float(hourly_rate or 0))
-    parsed_ot_rate = parse_optional_float(overtime_hourly_rate)
+    hourly_parsed = parse_optional_float(hourly_rate.strip() if hourly_rate else "")
+    employee.hourly_rate = max(0.0, float(hourly_parsed if hourly_parsed is not None else 0.0))
+    parsed_ot_rate = parse_optional_float(overtime_hourly_rate.strip() if overtime_hourly_rate else "")
     employee.overtime_hourly_rate = max(0, parsed_ot_rate) if parsed_ot_rate is not None else None
     employee.overtime_multiplier = max(1.0, float(overtime_multiplier or 1.5))
     employee.active = str(active).lower() in ("1", "true", "yes", "on")
     db.commit()
-    return render_admin_time(request, db, message=f"{employee.name} güncellendi.")
+    return render_admin_time(request, db, message="Çalışan bilgileri güncellendi.")
 
 
 @router.post("/admin-time/register-link", response_class=HTMLResponse)
 def create_register_link(request: Request, employee_id: int = Form(...), db: Session = Depends(get_db)):
-    token = token_urlsafe(24)
-    db.add(
-        RegistrationToken(
-            employee_id=employee_id,
-            token=token,
-            used=False,
-            created_at=now_berlin(),
-        )
-    )
+    ensure_registration_token_columns(db)
+    employee = db.scalar(select(Employee).where(Employee.id == employee_id))
+    if not employee:
+        return render_admin_time(request, db, message="Çalışan bulunamadı.")
+    row = get_active_registration_token(db, employee_id)
+    if not row:
+        row = create_registration_token(db, employee_id, deactivate_existing=True)
     db.commit()
-    link = build_register_link(token)
+    link = build_register_link(row.token)
     return render_admin_time(request, db, register_link=link, message="Kayıt linki oluşturuldu.")
+
+
+@router.get("/admin-time/employees/{employee_id}/device-link")
+def employee_device_link(
+    employee_id: int,
+    channel: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    ensure_registration_token_columns(db)
+    employee = db.scalar(select(Employee).where(Employee.id == employee_id))
+    if not employee:
+        return RedirectResponse("/admin-time?message=Çalışan+bulunamadı.", status_code=303)
+    token_row = get_active_registration_token(db, employee_id)
+    if not token_row:
+        token_row = create_registration_token(db, employee_id, deactivate_existing=True)
+    register_link = build_register_link(token_row.token)
+    phone_digits = normalize_phone_digits(employee.phone_number)
+    channel_name = (channel or "").lower()
+    if channel_name in ("whatsapp", "sms"):
+        if not phone_digits:
+            db.commit()
+            return RedirectResponse("/admin-time?message=Telefon+numarası+gerekli.", status_code=303)
+        token_row.last_sent_at = now_berlin()
+        db.commit()
+        if channel_name == "whatsapp":
+            return RedirectResponse(build_whatsapp_link(phone_digits, register_link), status_code=302)
+        return RedirectResponse(build_sms_uri(phone_digits, register_link), status_code=302)
+    db.commit()
+    return {
+        "employee_id": employee_id,
+        "token": token_row.token,
+        "active": bool(token_row.active and (not token_row.used)),
+        "register_link": register_link,
+        "last_sent_at": token_row.last_sent_at.isoformat() if token_row.last_sent_at else None,
+    }
+
+
+@router.post("/admin-time/employees/{employee_id}/regenerate-link")
+def regenerate_employee_link(
+    employee_id: int,
+    request: Request,
+    channel: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    ensure_registration_token_columns(db)
+    employee = db.scalar(select(Employee).where(Employee.id == employee_id))
+    if not employee:
+        return render_admin_time(request, db, message="Çalışan bulunamadı.")
+    row = create_registration_token(db, employee_id, deactivate_existing=True)
+    register_link = build_register_link(row.token)
+    phone_digits = normalize_phone_digits(employee.phone_number)
+    channel_name = (channel or "").lower()
+    if channel_name in ("whatsapp", "sms"):
+        if not phone_digits:
+            db.commit()
+            return render_admin_time(
+                request,
+                db,
+                register_link=register_link,
+                message="Telefon numarası yok. Önce telefon ekleyin.",
+            )
+        row.last_sent_at = now_berlin()
+        db.commit()
+        if channel_name == "whatsapp":
+            return RedirectResponse(build_whatsapp_link(phone_digits, register_link), status_code=302)
+        return RedirectResponse(build_sms_uri(phone_digits, register_link), status_code=302)
+    db.commit()
+    return render_admin_time(request, db, register_link=register_link, message="Yeni kayıt linki üretildi.")
 
 
 @router.get("/register-device", response_class=HTMLResponse)
 def register_device(request: Request, token: str, db: Session = Depends(get_db)):
+    ensure_registration_token_columns(db)
     reg = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token))
-    if not reg or reg.used:
+    if not reg or reg.used or not reg.active:
         return templates.TemplateResponse(
             request=request,
             name="register_status.html",
@@ -360,6 +502,7 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
         )
     )
     reg.used = True
+    reg.active = False
     db.commit()
     employee = db.scalar(select(Employee).where(Employee.id == reg.employee_id))
     default_vehicle = db.scalar(select(Vehicle).where(Vehicle.active.is_(True)).order_by(Vehicle.qr_code_slug))

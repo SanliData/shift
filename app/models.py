@@ -67,7 +67,9 @@ class RegistrationToken(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False)
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

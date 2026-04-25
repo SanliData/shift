@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..config import BASE_URL, TIMEZONE, TIME_FALLBACK_URL
 from ..database import get_db
@@ -36,7 +36,9 @@ def get_registered_device(db: Session, request: Request):
     if not token:
         return None
     return db.scalar(
-        select(Device).where(Device.device_token == token, Device.active.is_(True))
+        select(Device)
+        .options(selectinload(Device.employee))
+        .where(Device.device_token == token, Device.active.is_(True))
     )
 
 
@@ -65,13 +67,15 @@ def time_page(request: Request, vehicle: str, db: Session = Depends(get_db)):
     if not vehicle_obj:
         return RedirectResponse(FALLBACK_URL, status_code=302)
 
+    employee = device.employee
     active_entry = get_active_entry(db, device.employee_id)
     return templates.TemplateResponse(
         request=request,
         name="time.html",
         context={
             "request": request,
-            "employee": device.employee,
+            "employee": employee,
+            "employee_can_start": bool(employee and employee.active),
             "vehicle": vehicle_obj,
             "active_entry": active_entry,
             "message": request.query_params.get("message", ""),
@@ -90,6 +94,13 @@ def start_shift(request: Request, vehicle_slug: str = Form(...), db: Session = D
     vehicle_obj = db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == vehicle_slug, Vehicle.active.is_(True)))
     if not vehicle_obj:
         return RedirectResponse(FALLBACK_URL, status_code=302)
+
+    employee = device.employee
+    if employee and not employee.active:
+        return RedirectResponse(
+            f"/time?vehicle={vehicle_slug}&error=Hesabınız pasif. Yeni mesai başlatılamaz.",
+            status_code=303,
+        )
 
     if get_active_entry(db, device.employee_id):
         return RedirectResponse(

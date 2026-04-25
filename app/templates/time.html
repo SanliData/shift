@@ -14,10 +14,14 @@
     {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
     {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
     <div class="button-grid mobile-stack">
+        {% if employee_can_start %}
         <form method="post" action="/time/start">
             <input type="hidden" name="vehicle_slug" value="{{ vehicle.qr_code_slug }}">
             <button class="btn btn-start" type="submit">Mesai Başlat</button>
         </form>
+        {% else %}
+        <p class="alert error">Hesabınız pasif. Yeni mesai başlatılamaz; gerekirse yöneticinizle iletişime geçin. Mevcut mesainizi bitirebilirsiniz.</p>
+        {% endif %}
         <form method="post" action="/time/stop">
             <input type="hidden" name="vehicle_slug" value="{{ vehicle.qr_code_slug }}">
             <button class="btn btn-stop" type="submit">Mesai Bitir</button>

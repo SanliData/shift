@@ -80,6 +80,32 @@ th { background: #F8FAFC; color: var(--muted); font-weight: 600; }
 .modal { border: 0; padding: 0; background: transparent; }
 .modal::backdrop { background: rgba(15,23,42,.55); }
 .modal-card { background: #fff; border-radius: 12px; padding: 18px; width: min(460px, 94vw); display: grid; gap: 10px; box-shadow: var(--shadow); }
+.modal-card-wide { width: min(560px, 94vw); }
+.modal-card .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) {
+  .modal-card .form-row-2 { grid-template-columns: 1fr; }
+}
+.table-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stack-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 360px; }
+.register-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; word-break: break-all; }
+.register-inline a { font-size: 13px; }
+.phone-warning { font-size: 12px; color: #B45309; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 8px 10px; margin-top: 4px; display: none; }
+.phone-warning.visible { display: block; }
+.app-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  background: #0F172A;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all .2s ease;
+  pointer-events: none;
+  z-index: 120;
+}
+.app-toast.visible { opacity: 1; transform: translateY(0); }
 @media (max-width: 1100px) {
   .quick-grid { grid-template-columns: repeat(2, 1fr); }
   .hero { grid-template-columns: 1fr; }

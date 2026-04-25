@@ -61,6 +61,17 @@ def seed_data():
         if "active" not in vehicle_col_names and vehicle_cols:
             db.execute(text("ALTER TABLE vehicles ADD COLUMN active BOOLEAN DEFAULT 1"))
             db.commit()
+        reg_token_cols = db.execute(text("PRAGMA table_info(registration_tokens)")).fetchall()
+        reg_token_col_names = {c[1] for c in reg_token_cols}
+        if reg_token_cols and "active" not in reg_token_col_names:
+            db.execute(text("ALTER TABLE registration_tokens ADD COLUMN active BOOLEAN DEFAULT 1"))
+            db.commit()
+        if reg_token_cols and "last_sent_at" not in reg_token_col_names:
+            db.execute(text("ALTER TABLE registration_tokens ADD COLUMN last_sent_at DATETIME"))
+            db.commit()
+        if reg_token_cols:
+            db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
+            db.commit()
 
         if (db.scalar(select(func.count(Employee.id))) or 0) == 0:
             db.add_all(
