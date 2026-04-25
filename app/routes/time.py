@@ -55,19 +55,28 @@ def redirect_no_device_cookie():
     return RedirectResponse(FALLBACK_URL, status_code=302)
 
 
+def get_valid_vehicle(db: Session, vehicle_slug: str | None):
+    clean_slug = (vehicle_slug or "").strip()
+    if not clean_slug:
+        return None
+    return db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == clean_slug, Vehicle.active.is_(True)))
+
+
 @router.get("/time", response_class=HTMLResponse)
-def time_page(request: Request, vehicle: str, db: Session = Depends(get_db)):
+def time_page(request: Request, vehicle: str | None = None, db: Session = Depends(get_db)):
     if not request.cookies.get(DEVICE_COOKIE):
         return redirect_no_device_cookie()
     device = get_registered_device(db, request)
     if not device:
         return RedirectResponse(FALLBACK_URL, status_code=302)
 
-    vehicle_obj = db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == vehicle, Vehicle.active.is_(True)))
+    vehicle_obj = get_valid_vehicle(db, vehicle)
     if not vehicle_obj:
         return RedirectResponse(FALLBACK_URL, status_code=302)
 
     employee = device.employee
+    if not employee:
+        return RedirectResponse(FALLBACK_URL, status_code=302)
     active_entry = get_active_entry(db, device.employee_id)
     return templates.TemplateResponse(
         request=request,
@@ -85,20 +94,20 @@ def time_page(request: Request, vehicle: str, db: Session = Depends(get_db)):
 
 
 @router.post("/time/start")
-def start_shift(request: Request, vehicle_slug: str = Form(...), db: Session = Depends(get_db)):
+def start_shift(request: Request, vehicle_slug: str | None = Form(default=None), db: Session = Depends(get_db)):
     if not request.cookies.get(DEVICE_COOKIE):
         return redirect_no_device_cookie()
     device = get_registered_device(db, request)
     if not device:
         return RedirectResponse(FALLBACK_URL, status_code=302)
-    vehicle_obj = db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == vehicle_slug, Vehicle.active.is_(True)))
+    vehicle_obj = get_valid_vehicle(db, vehicle_slug)
     if not vehicle_obj:
         return RedirectResponse(FALLBACK_URL, status_code=302)
 
     employee = device.employee
-    if employee and not employee.active:
+    if not employee or not employee.active:
         return RedirectResponse(
-            f"/time?vehicle={vehicle_slug}&error=Hesabınız pasif. Yeni mesai başlatılamaz.",
+            FALLBACK_URL,
             status_code=303,
         )
 
@@ -120,26 +129,29 @@ def start_shift(request: Request, vehicle_slug: str = Form(...), db: Session = D
     )
     db.commit()
     return RedirectResponse(
-        f"/time?vehicle={vehicle_slug}&message=Mesai başlatıldı.",
+        f"/time?vehicle={vehicle_obj.qr_code_slug}&message=Mesai başlatıldı.",
         status_code=303,
     )
 
 
 @router.post("/time/stop")
-def stop_shift(request: Request, vehicle_slug: str = Form(...), db: Session = Depends(get_db)):
+def stop_shift(request: Request, vehicle_slug: str | None = Form(default=None), db: Session = Depends(get_db)):
     if not request.cookies.get(DEVICE_COOKIE):
         return redirect_no_device_cookie()
     device = get_registered_device(db, request)
     if not device:
         return RedirectResponse(FALLBACK_URL, status_code=302)
-    vehicle_obj = db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == vehicle_slug, Vehicle.active.is_(True)))
+    vehicle_obj = get_valid_vehicle(db, vehicle_slug)
     if not vehicle_obj:
         return RedirectResponse(FALLBACK_URL, status_code=302)
+    employee = device.employee
+    if not employee or not employee.active:
+        return RedirectResponse(FALLBACK_URL, status_code=303)
 
     active = get_active_entry(db, device.employee_id)
     if not active:
         return RedirectResponse(
-            f"/time?vehicle={vehicle_slug}&error=Aktif mesai bulunamadı.",
+            f"/time?vehicle={vehicle_obj.qr_code_slug}&error=Aktif mesai bulunamadı.",
             status_code=303,
         )
 
@@ -170,6 +182,6 @@ def stop_shift(request: Request, vehicle_slug: str = Form(...), db: Session = De
     db.commit()
 
     return RedirectResponse(
-        f"/time?vehicle={vehicle_slug}&message=Mesai bitirildi.",
+        f"/time?vehicle={vehicle_obj.qr_code_slug}&message=Mesai bitirildi.",
         status_code=303,
     )
