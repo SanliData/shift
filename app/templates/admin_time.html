@@ -97,10 +97,19 @@
                 <td>{{ "%.2f"|format((employee_total_minutes_map.get(e.id, 0) / 60)) }}</td>
                 <td class="stack-actions">
                     {% set act = employee_actions.get(e.id, {}) %}
-                    <form method="get" action="{{ act.link_url }}" class="inline-actions">
-                        <button class="btn btn-primary small" type="submit">Kayıt Linki Üret</button>
-                    </form>
-                    <p class="muted small">Token durumu: <strong>{{ act.token_status }}</strong></p>
+                    <button class="btn btn-primary small" type="button" onclick="generateLink({{ e.id }})">Kayıt Linki Üret</button>
+                    <div id="link-box-{{ e.id }}">
+                        {% if act.register_link %}
+                        <div>
+                            <a href="{{ act.register_link }}" target="_blank" rel="noopener">{{ act.register_link }}</a>
+                        </div>
+                        <button class="btn btn-secondary small" type="button" data-label="Kopyala" data-copy-text="{{ act.register_link }}" onclick="copyRegisterLink(this)">Kopyala</button>
+                        {% if act.wa_url %}
+                        <a class="btn btn-secondary small" href="{{ act.wa_url }}" target="_blank" rel="noopener">WhatsApp</a>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    <p class="muted small">Token durumu: <strong id="token-status-{{ e.id }}">{{ act.token_status|default("Token yok") }}</strong></p>
                     <p class="muted small">Son gönderim: <strong>{{ act.last_sent_at or "-" }}</strong></p>
                     {% if act.token_active and act.wa_url %}
                     <a class="btn btn-secondary small" href="{{ act.resend_wa_url }}" target="_blank" rel="noopener" onclick="showToast('Link tekrar gönderildi')">Tekrar Gönder (WhatsApp)</a>
@@ -111,17 +120,11 @@
                     <a class="btn btn-secondary small" href="{{ act.resend_sms_url }}" onclick="showToast('Link tekrar gönderildi')">Tekrar Gönder (SMS)</a>
                     {% endif %}
                     {% if act.register_link %}
-                    <div class="register-inline">
-                        <a href="{{ act.register_link }}">{{ act.register_link }}</a>
-                        <button class="btn btn-secondary small" type="button" data-label="Kopyala" data-copy-text="{{ act.register_link }}" onclick="copyRegisterLink(this)">Kopyala</button>
-                    </div>
                     <form method="post" action="{{ act.regenerate_url }}" class="inline-actions">
                         <button class="btn btn-secondary small" type="submit">Yeni link üret</button>
                         <button class="btn btn-secondary small" type="submit" name="channel" value="whatsapp" onclick="showToast('Link tekrar gönderildi')">Yeni link + WhatsApp</button>
                         <button class="btn btn-secondary small" type="submit" name="channel" value="sms" onclick="showToast('Link tekrar gönderildi')">Yeni link + SMS</button>
                     </form>
-                    {% else %}
-                    <p class="muted small">Yeni kayıt linki üretin.</p>
                     {% endif %}
                 </td>
                 <td class="table-actions">
@@ -251,6 +254,83 @@
 </dialog>
 
 <script>
+async function generateLink(employeeId) {
+    const box = document.getElementById(`link-box-${employeeId}`);
+    if (!box) return;
+    const res = await fetch(`/admin-time/employees/${employeeId}/device-link`, {
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+        let msg = "Link üretilemedi.";
+        try {
+            const err = await res.json();
+            if (err.detail) {
+                msg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
+            }
+        } catch (_) {}
+        box.replaceChildren();
+        const p = document.createElement("p");
+        p.className = "alert error small";
+        p.textContent = msg;
+        box.appendChild(p);
+        return;
+    }
+    const data = await res.json();
+    const link = data.register_link;
+    if (!link) {
+        box.replaceChildren();
+        const p = document.createElement("p");
+        p.className = "muted small";
+        p.textContent = "Kayıt linki alınamadı.";
+        box.appendChild(p);
+        return;
+    }
+    const st = document.getElementById(`token-status-${employeeId}`);
+    if (st) {
+        if (data.used) st.textContent = "Kullanılmış";
+        else if (data.active) st.textContent = "Geçerli token";
+        else st.textContent = "Token yok";
+    }
+    box.replaceChildren();
+    const wrap = document.createElement("div");
+    const a = document.createElement("a");
+    a.href = link;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = link;
+    wrap.appendChild(a);
+    box.appendChild(wrap);
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "btn btn-secondary small";
+    copyBtn.textContent = "Kopyala";
+    copyBtn.addEventListener("click", () => copyLink(link));
+    box.appendChild(copyBtn);
+    const wa = document.createElement("a");
+    wa.className = "btn btn-secondary small";
+    wa.href = "https://wa.me/?text=" + encodeURIComponent(link);
+    wa.target = "_blank";
+    wa.rel = "noopener";
+    wa.textContent = "WhatsApp";
+    box.appendChild(wa);
+}
+
+async function copyLink(text) {
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast("Kopyalandı");
+    } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        showToast("Kopyalandı");
+    }
+}
+
 function showToast(message) {
     const toast = document.getElementById("app-toast");
     if (!toast) return;

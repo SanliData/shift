@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import qrcode
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
@@ -317,7 +317,10 @@ def render_admin_time(
         token_row = get_active_registration_token(db, emp.id)
         latest_token = get_latest_registration_token(db, emp.id)
         if not token_row:
-            token_status = "kullanılmış token" if (latest_token and latest_token.used) else "token yok"
+            if latest_token and latest_token.used:
+                token_status = "Kullanılmış"
+            else:
+                token_status = "Token yok"
             last_sent = as_berlin(latest_token.last_sent_at).strftime("%d.%m.%Y %H:%M") if (latest_token and latest_token.last_sent_at) else "-"
             employee_actions[emp.id] = {
                 "register_link": "",
@@ -343,7 +346,7 @@ def render_admin_time(
             "wa_url": wa_url,
             "sms_uri": sms_uri,
             "phone_digits": digits,
-            "token_status": "aktif kullanılmamış token var",
+            "token_status": "Geçerli token",
             "token_active": True,
             "last_sent_at": last_sent,
             "resend_wa_url": f"/admin-time/employees/{emp.id}/device-link?channel=whatsapp",
@@ -506,15 +509,19 @@ def employee_device_link(
     db: Session = Depends(get_db),
 ):
     ensure_registration_token_columns(db)
+    channel_name = (channel or "").lower()
     employee = db.scalar(select(Employee).where(Employee.id == employee_id))
     if not employee:
-        return RedirectResponse("/admin-time?message=Çalışan+bulunamadı.", status_code=303)
+        if channel_name in ("whatsapp", "sms"):
+            return RedirectResponse("/admin-time?message=Çalışan+bulunamadı.", status_code=303)
+        return JSONResponse({"detail": "Çalışan bulunamadı."}, status_code=404)
     token_row = get_or_create_valid_registration_token(db, employee_id)
     if not token_row:
-        return RedirectResponse("/admin-time?message=Çalışan+pasif.", status_code=303)
+        if channel_name in ("whatsapp", "sms"):
+            return RedirectResponse("/admin-time?message=Çalışan+pasif.", status_code=303)
+        return JSONResponse({"detail": "Çalışan pasif."}, status_code=400)
     register_link = build_register_link(token_row.token)
     phone_digits = normalize_phone_digits(employee.phone_number)
-    channel_name = (channel or "").lower()
     if channel_name in ("whatsapp", "sms"):
         if not phone_digits:
             db.commit()
