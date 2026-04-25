@@ -457,6 +457,10 @@ def employee_device_link(
     if not employee:
         return RedirectResponse("/admin-time?message=Çalışan+bulunamadı.", status_code=303)
     token_row = get_active_registration_token(db, employee_id)
+    # Safety guard: never reuse used tokens, even if legacy data is inconsistent.
+    if token_row and token_row.used:
+        token_row.active = False
+        token_row = None
     if not token_row:
         token_row = create_registration_token(db, employee_id, deactivate_existing=True)
     register_link = build_register_link(token_row.token)
@@ -476,6 +480,7 @@ def employee_device_link(
         "employee_id": employee_id,
         "token": token_row.token,
         "active": bool(token_row.active and (not token_row.used)),
+        "used": bool(token_row.used),
         "register_link": register_link,
         "last_sent_at": token_row.last_sent_at.isoformat() if token_row.last_sent_at else None,
     }

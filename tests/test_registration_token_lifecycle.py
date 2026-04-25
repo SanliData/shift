@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -27,6 +30,7 @@ def test_registration_token_lifecycle():
         assert r1.status_code == 200
         payload1 = r1.json()
         token1 = payload1["token"]
+        assert payload1["used"] is False
 
     with SessionLocal() as db:
         row1 = db.scalar(select(RegistrationToken).where(RegistrationToken.token == token1))
@@ -55,6 +59,47 @@ def test_registration_token_lifecycle():
         assert row2 is not None and row2.used is False
         db.query(Device).filter(Device.employee_id == employee_id).delete()
         db.query(RegistrationToken).filter(RegistrationToken.employee_id == employee_id).delete()
+        emp = db.scalar(select(Employee).where(Employee.id == employee_id))
+        if emp:
+            db.delete(emp)
+        db.commit()
+
+
+def test_device_link_skips_used_tokens_even_if_active_true():
+    with SessionLocal() as db:
+        emp = Employee(
+            name="Used Token Guard User",
+            phone_number="+49 170 1239999",
+            hourly_rate=10,
+            overtime_multiplier=1.5,
+            overtime_hourly_rate=15,
+            active=True,
+        )
+        db.add(emp)
+        db.commit()
+        db.refresh(emp)
+        employee_id = emp.id
+        # Simulate inconsistent production row.
+        bad = RegistrationToken(
+            employee_id=employee_id,
+            token="bad-used-token-row",
+            active=True,
+            used=True,
+            created_at=datetime.now(ZoneInfo("Europe/Berlin")),
+        )
+        db.add(bad)
+        db.commit()
+
+    with TestClient(app) as client:
+        r = client.get(f"/admin-time/employees/{employee_id}/device-link")
+        assert r.status_code == 200
+        payload = r.json()
+        assert payload["used"] is False
+        assert payload["token"] != "bad-used-token-row"
+
+    with SessionLocal() as db:
+        db.query(RegistrationToken).filter(RegistrationToken.employee_id == employee_id).delete()
+        db.query(Device).filter(Device.employee_id == employee_id).delete()
         emp = db.scalar(select(Employee).where(Employee.id == employee_id))
         if emp:
             db.delete(emp)
