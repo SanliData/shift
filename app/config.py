@@ -34,5 +34,5 @@ BASE_URL = get_setting("BASE_URL", "http://127.0.0.1:8002").rstrip("/")
 TIMEZONE = get_setting("TIMEZONE", "Europe/Berlin")
 ENV = get_setting("ENV", "development").lower()
 DATABASE_URL = get_setting("DATABASE_URL", "sqlite:///./data/app.db")
-TIME_FALLBACK_URL = BASE_URL if ENV == "production" else "/ui/index.html"
+TIME_FALLBACK_URL = get_setting("TIME_FALLBACK_URL", "https://www.sanli-netzbau.de/")
 COOKIE_SECURE = get_bool_setting("COOKIE_SECURE", ENV == "production")
