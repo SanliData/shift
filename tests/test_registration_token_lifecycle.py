@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import sys
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
@@ -16,6 +17,7 @@ for key in list(sys.modules):
 from app.database import SessionLocal
 from app.main import app
 from app.models import Device, Employee, RegistrationToken
+from app.routes.admin_time import build_whatsapp_link
 
 
 def _create_employee(name: str) -> int:
@@ -44,18 +46,34 @@ def _cleanup_employee(employee_id: int):
         db.commit()
 
 
-def test_device_link_and_register_link_return_only_unused_tokens():
+def test_device_link_returns_only_unused_tokens_and_register_link_is_gone():
     employee_id = _create_employee("Token Source User")
     try:
         with TestClient(app) as client:
             p1 = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
-            p2 = client.post("/admin-time/register-link", data={"employee_id": employee_id})
-            assert p2.status_code == 200
+            dep = client.post("/admin-time/register-link", data={"employee_id": employee_id})
+            assert dep.status_code == 410
+            assert "device-link" in (dep.json().get("detail") or "")
             p3 = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
         assert p1["used"] is False
+        assert p1["active"] is True
         assert p3["used"] is False
+        assert p3["active"] is True
         assert p1["token"] == p3["token"]
         assert "created_at" in p3 and p3["created_at"] is not None
+    finally:
+        _cleanup_employee(employee_id)
+
+
+def test_whatsapp_helper_includes_register_link_from_device_link():
+    employee_id = _create_employee("WA Link User")
+    try:
+        with TestClient(app) as client:
+            payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
+        reg_link = payload["register_link"]
+        assert payload["active"] is True and payload["used"] is False
+        wa = build_whatsapp_link("491701234567", reg_link)
+        assert reg_link in unquote(wa)
     finally:
         _cleanup_employee(employee_id)
 

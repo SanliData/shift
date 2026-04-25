@@ -250,7 +250,6 @@ def render_admin_time(
     date_to: str = "",
     employee_id: int | None = None,
     vehicle_id: int | None = None,
-    register_link: str = "",
     message: str = "",
 ):
     ensure_registration_token_columns(db)
@@ -392,7 +391,6 @@ def render_admin_time(
                 "employee_id": employee_id or "",
                 "vehicle_id": vehicle_id or "",
             },
-            "register_link": register_link,
             "message": message,
         },
     )
@@ -484,22 +482,12 @@ def update_employee(
     return render_admin_time(request, db, message="Çalışan bilgileri güncellendi.")
 
 
-@router.post("/admin-time/register-link", response_class=HTMLResponse)
-def create_register_link(request: Request, employee_id: int = Form(...), db: Session = Depends(get_db)):
-    ensure_registration_token_columns(db)
-    row = get_or_create_valid_registration_token(db, employee_id)
-    if not row:
-        return render_admin_time(request, db, message="Çalışan bulunamadı veya pasif.")
-    db.commit()
-    link = build_register_link(row.token)
-    logger.debug(
-        "register link ready employee_id=%s token=%s used=%s active=%s",
-        employee_id,
-        row.token,
-        row.used,
-        row.active,
+@router.post("/admin-time/register-link")
+def create_register_link_deprecated():
+    return JSONResponse(
+        {"detail": "Deprecated. Use GET /admin-time/employees/{employee_id}/device-link"},
+        status_code=410,
     )
-    return render_admin_time(request, db, register_link=link, message="Kayıt linki oluşturuldu.")
 
 
 @router.get("/admin-time/employees/{employee_id}/device-link")
@@ -566,7 +554,6 @@ def regenerate_employee_link(
             return render_admin_time(
                 request,
                 db,
-                register_link=register_link,
                 message="Telefon numarası yok. Önce telefon ekleyin.",
             )
         row.last_sent_at = now_berlin()
@@ -575,7 +562,7 @@ def regenerate_employee_link(
             return RedirectResponse(build_whatsapp_link(phone_digits, register_link), status_code=302)
         return RedirectResponse(build_sms_uri(phone_digits, register_link), status_code=302)
     db.commit()
-    return render_admin_time(request, db, register_link=register_link, message="Yeni kayıt linki üretildi.")
+    return render_admin_time(request, db, message="Yeni kayıt linki üretildi.")
 
 
 @router.get("/register-device", response_class=HTMLResponse)

@@ -64,23 +64,6 @@
 </section>
 
 <section class="card">
-    <h3>Cihaz Kayıt Linki Oluştur</h3>
-    <form method="post" action="/admin-time/register-link">
-        <select name="employee_id" required>
-            <option value="">Çalışan seçin</option>
-            {% for e in employees %}
-            <option value="{{ e.id }}">{{ e.name }}{% if e.phone_number %} ({{ e.phone_number }}){% endif %}</option>
-            {% endfor %}
-        </select>
-        <button class="btn btn-primary small" type="submit">Link Üret</button>
-    </form>
-    {% if register_link %}
-        <p><a href="{{ register_link }}">{{ register_link }}</a></p>
-        <button class="btn btn-secondary small" type="button" data-label="Kopyala" data-copy-text="{{ register_link }}" onclick="copyRegisterLink(this)">Kopyala</button>
-    {% endif %}
-</section>
-
-<section class="card">
     <h3>Çalışan Tablosu</h3>
     <table>
         <thead><tr><th>Çalışan</th><th>Telefon</th><th>Normal saat ücreti</th><th>Fazla mesai saat ücreti</th><th>Cihaz sayısı</th><th>Aktif/Pasif</th><th>Aktif mesai</th><th>Toplam saat</th><th>Kayıt linki ve gönderim</th><th>İşlemler</th></tr></thead>
