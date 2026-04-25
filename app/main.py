@@ -2,7 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
@@ -130,13 +130,9 @@ def startup():
     seed_data()
 
 
-@app.get("/", response_class=HTMLResponse)
-def root(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="home.html",
-        context={"request": request, "now_time": datetime.now(BERLIN_TZ).strftime("%d.%m.%Y %H:%M")},
-    )
+@app.get("/")
+def root_redirect():
+    return RedirectResponse(url="https://www.sanli-netzbau.de/")
 
 
 @app.get("/shift", response_class=HTMLResponse)
@@ -148,10 +144,6 @@ def shift_root(request: Request):
     )
 
 
-@app.get("/ui/index.html", response_class=HTMLResponse)
-def ui_index(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="ui_index.html",
-        context={"request": request},
-    )
+@app.get("/ui/index.html")
+def ui_index_redirect():
+    return RedirectResponse(url="https://www.sanli-netzbau.de/")
