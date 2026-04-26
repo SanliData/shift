@@ -7,6 +7,10 @@
   <a class="btn btn-secondary small" href="/admin-time/reports">← Raporlara dön</a>
 </div>
 
+{% if profile_message %}
+<div class="alert" style="margin-bottom:12px;background:var(--surface-2);border:1px solid var(--border);padding:10px 14px;border-radius:8px">{{ profile_message }}</div>
+{% endif %}
+
 <div class="card">
   <div class="section-head">
     <h2>Çalışan bilgileri</h2>
@@ -14,10 +18,51 @@
   </div>
   <div class="card-body" style="display:grid;gap:10px;font-size:13px">
     <div class="flex-between"><span class="muted">Ad</span><strong>{{ employee.name }}</strong></div>
-    <div class="flex-between"><span class="muted">Telefon</span><span class="font-mono">{{ employee.phone_number or "—" }}</span></div>
+    <div class="flex-between"><span class="muted">Önbellek telefon</span><span class="font-mono">{{ employee.phone_number or "—" }}</span></div>
     <div class="flex-between"><span class="muted">Doğum tarihi</span><span>{{ employee.date_of_birth or "—" }}</span></div>
     <div class="flex-between"><span class="muted">Normal saatlik ücret</span><span>{{ hourly_normal_eur }}</span></div>
     <div class="flex-between"><span class="muted">Fazla mesai saatlik</span><span>{{ overtime_rate_eur }}</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-head"><h2>Telefon numaraları</h2><span class="badge badge-blue">{{ employee_phones|length }}</span></div>
+  <div class="card-body" style="padding-top:0">
+    {% if employee_phones %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Numara</th><th>Birincil</th><th>Geçici</th><th>İşlemler</th></tr></thead>
+        <tbody>
+        {% for p in employee_phones %}
+        <tr>
+          <td class="font-mono">{{ p.phone }}</td>
+          <td>{% if p.is_primary %}<span class="badge badge-green">Evet</span>{% else %}<form method="post" action="/admin-time/employees/{{ employee.id }}/phones/{{ p.id }}/set-primary" class="inline-actions" style="display:inline"><button type="submit" class="btn btn-secondary small">Birincil yap</button></form>{% endif %}</td>
+          <td>{% if p.is_temporary %}<span class="badge badge-amber">Evet</span>
+            <form method="post" action="/admin-time/employees/{{ employee.id }}/phones/{{ p.id }}/make-permanent" class="inline-actions" style="display:inline;margin-left:6px"><button type="submit" class="btn btn-accent small">Kalıcıya çevir</button></form>
+            {% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>
+            <form method="post" action="/admin-time/employees/{{ employee.id }}/phones/{{ p.id }}/delete" class="inline-actions" style="display:inline" onsubmit="return confirm('Bu numarayı silmek istediğinize emin misiniz?');"><button type="submit" class="btn btn-danger small">Sil</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted small" style="padding:12px 0">Kayıtlı telefon yok; aşağıdan ekleyin.</p>
+    {% endif %}
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <h3 class="small" style="margin:0 0 10px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-3)">Numara ekle</h3>
+      <form method="post" action="/admin-time/employees/{{ employee.id }}/phones/add" class="stack-actions" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;min-width:200px">
+          <label>Telefon</label>
+          <input type="tel" name="phone" required placeholder="+49 …" style="width:100%">
+        </div>
+        <label class="small" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" name="is_primary" value="true"> Birincil</label>
+        <label class="small" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" name="is_temporary" value="true"> Geçici</label>
+        <button type="submit" class="btn btn-primary small">Ekle</button>
+      </form>
+    </div>
   </div>
 </div>
 

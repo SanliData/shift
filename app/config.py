@@ -54,6 +54,13 @@ COOKIE_SECURE = get_bool_setting("COOKIE_SECURE", ENV == "production")
 # HMAC for self-registration confirm links (set in production .env)
 REGISTRATION_SIGNING_SECRET = get_setting("REGISTRATION_SIGNING_SECRET", "dev-change-me-not-for-production")
 
+# Admin UI (JWT cookie session; bcrypt passwords in admin_users)
+ADMIN_SESSION_SECRET = get_setting("ADMIN_SESSION_SECRET", "dev-admin-session-secret-change-in-production")
+ADMIN_SESSION_COOKIE = "admin_session"
+
+# Tüm ön tanımlı yöneticiler için ortak geçici şifre (ilk girişte değiştirilir). Üretimde .env ile değiştirin.
+ADMIN_BOOTSTRAP_TEMP_PASSWORD = get_setting("ADMIN_BOOTSTRAP_TEMP_PASSWORD", "Damlacik242-28")
+
 # ---- Multi-tenant readiness ----
 # TODO (v3): Add company_id to all models for multi-tenant SaaS
 # COMPANY_ID = get_setting("COMPANY_ID", "default")

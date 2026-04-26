@@ -7,6 +7,55 @@
 <div class="alert {% if 'bulunamadı' in message or 'boş' in message or 'başka' in message or 'zaten' in message %}error{% else %}success{% endif %}">{{ message }}</div>
 {% endif %}
 
+<!-- Self-service vehicle registration (QR) -->
+<div class="card">
+  <div class="section-head">
+    <h2>Araç ön kayıt (QR self-service)</h2>
+  </div>
+  <p class="muted" style="padding:0 20px">Sahadaki ekip bu link veya QR ile yeni araç / iş makinesi talebi oluşturur. Siz onayladığınızda sistemde aktif araç ve mesai QR’ı oluşur.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;padding:16px 20px 20px">
+    <div style="flex:1;min-width:200px">
+      <p style="word-break:break-all;font-size:13px;margin-bottom:8px"><a href="{{ self_vehicle_register_link }}" target="_blank" rel="noopener">{{ self_vehicle_register_link }}</a></p>
+      <button type="button" class="btn btn-secondary small" onclick="copyText('{{ self_vehicle_register_link }}','URL')">📋 Linki kopyala</button>
+    </div>
+    <div style="text-align:center">
+      <img src="{{ self_vehicle_qr_url }}" alt="Araç ön kayıt QR" width="160" height="160" style="border:1px solid var(--border);border-radius:8px;background:#fff;padding:8px">
+      <div class="small muted" style="margin-top:6px">QR — ön kayıt formu</div>
+    </div>
+  </div>
+  {% if provisional_vehicle_rows %}
+  <div class="table-wrap" style="border-top:1px solid var(--border)">
+    <table>
+      <thead><tr>
+        <th>Tarih</th><th>Ad</th><th>Tip</th><th>Slug önerisi</th><th>Not</th><th>İşlem</th>
+      </tr></thead>
+      <tbody>
+      {% for row in provisional_vehicle_rows %}
+      <tr>
+        <td class="font-mono small">{{ row.created }}</td>
+        <td><strong>{{ row.name }}</strong></td>
+        <td>{{ row.type }}</td>
+        <td class="font-mono small">{{ row.slug_hint or "—" }}</td>
+        <td class="small muted" style="max-width:200px">{{ row.notes or "—" }}</td>
+        <td>
+          <form method="post" action="/admin-time/provisional-vehicles/{{ row.id }}/approve" class="stack-actions" style="gap:6px;display:flex;flex-wrap:wrap;align-items:center">
+            <input type="text" name="qr_code_slug" placeholder="Son slug (boş=otomatik)" style="max-width:140px;font-size:12px">
+            <button type="submit" class="btn btn-primary small">Onayla — araç ekle</button>
+          </form>
+          <form method="post" action="/admin-time/provisional-vehicles/{{ row.id }}/reject" style="margin-top:6px" onsubmit="return confirm('Bu talebi reddetmek istiyor musunuz?');">
+            <button type="submit" class="btn btn-danger small">Reddet</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted" style="padding:0 20px 20px">Bekleyen araç ön kaydı yok.</p>
+  {% endif %}
+</div>
+
 <!-- Add Vehicle -->
 <div class="card">
   <div class="section-head">

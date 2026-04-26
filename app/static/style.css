@@ -52,6 +52,8 @@ input,select,textarea{font-family:inherit;font-size:inherit}
 .dropdown-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);min-width:180px;overflow:hidden;z-index:200}
 .dropdown-menu a{display:block;padding:10px 16px;font-size:13px;color:var(--text);transition:background var(--ease)}
 .dropdown-menu a:hover{background:var(--bg)}
+.dropdown-menu .dropdown-logout-btn{display:block;width:100%;text-align:left;padding:10px 16px;font-size:13px;font-weight:600;color:var(--red);background:transparent;border:none;cursor:pointer;font-family:inherit}
+.dropdown-menu .dropdown-logout-btn:hover{background:var(--bg)}
 .content{flex:1;padding:24px;display:flex;flex-direction:column;gap:20px}
 .content-inner{display:flex;flex-direction:column;gap:20px}
 .card{background:var(--bg-card);border-radius:var(--r);border:1px solid var(--border);box-shadow:var(--shadow-sm);overflow:hidden}

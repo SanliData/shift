@@ -9,10 +9,49 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
+# ---- Admin UI (FastAPI session + admin_users) ----
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="owner")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    force_password_change: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    password_reset_tokens = relationship(
+        "AdminPasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class AdminPasswordResetToken(Base):
+    """Single-use admin password reset link (token stored as HMAC digest only)."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user = relationship("AdminUser", back_populates="password_reset_tokens")
+
+
 # provisional_workers.status
 PW_STATUS_PENDING = "pending_registration"
 PW_STATUS_ACTIVE = "active"
 PW_STATUS_DEACTIVATED = "deactivated"
+
+# provisional_vehicles.status (self-register → admin approves)
+PV_VEHICLE_PENDING = "pending_vehicle"
+PV_VEHICLE_APPROVED = "approved_vehicle"
+PV_VEHICLE_REJECTED = "rejected_vehicle"
 
 
 class Employee(Base):
@@ -28,6 +67,30 @@ class Employee(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     devices = relationship("Device", back_populates="employee", foreign_keys="Device.employee_id")
+    phones = relationship("EmployeePhone", back_populates="employee", cascade="all, delete-orphan")
+
+
+class EmployeePhone(Base):
+    __tablename__ = "employee_phones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
+    phone: Mapped[str] = mapped_column(String(60), nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_temporary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    employee = relationship("Employee", back_populates="phones")
+
+
+class WorkerRegistrationToken(Base):
+    """Single-use pool: one active row gates public /worker-register/{token} (self-service worker onboarding)."""
+
+    __tablename__ = "worker_registration_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ProvisionalWorker(Base):
@@ -36,6 +99,8 @@ class ProvisionalWorker(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
     phone: Mapped[str] = mapped_column(String(60), nullable=False)
+    secondary_phone: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    primary_phone_is_temporary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     date_of_birth: Mapped[str | None] = mapped_column(String(32), nullable=True)
     device_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -68,6 +133,21 @@ class Vehicle(Base):
     type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     qr_code_slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class ProvisionalVehicle(Base):
+    """Field self-registration: pending until admin creates the real Vehicle row."""
+
+    __tablename__ = "provisional_vehicles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qr_slug_hint: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"), nullable=True, index=True)
 
 
 class TimeEntry(Base):

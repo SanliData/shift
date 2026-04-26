@@ -64,11 +64,17 @@
         <details class="admin-dropdown">
           <summary>Menü ▾</summary>
           <div class="dropdown-menu">
+            {% if request.state.admin_email %}
+            <span class="muted small" style="display:block;padding:6px 12px">{{ request.state.admin_email }}</span>
+            {% endif %}
             <a href="/admin-time/reports">Dashboard</a>
             <a href="/admin-time">Workforce</a>
             <a href="/admin-time/vehicles">Assets / Araçlar</a>
             <a href="/admin-time/reports">Reports</a>
             <a href="/admin-time/import">Import</a>
+            <form method="post" action="/admin/logout" style="margin:0;padding:0;border-top:1px solid var(--border)">
+              <button type="submit" class="dropdown-logout-btn">Çıkış</button>
+            </form>
           </div>
         </details>
       </div>

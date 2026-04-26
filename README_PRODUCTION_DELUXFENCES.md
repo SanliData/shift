@@ -82,8 +82,66 @@ location /admin-time {
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
+# Yönetici oturumu: /admin/login, /admin/logout; zorunlu şifre değişimi: /admin-change-password
+location /admin {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /admin-change-password {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /admin-forgot-password {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /admin-reset-password {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
 location /register-device {
     proxy_pass http://127.0.0.1:8010/register-device;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Personel ön kayıt: /register-self → 302 ile güncel token URL’sine; asıl form /worker-register/{token}
+location /register-self {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /worker-register {
+    proxy_pass http://127.0.0.1:8010;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /register-self-vehicle {
+    proxy_pass http://127.0.0.1:8010/register-self-vehicle;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -166,6 +224,7 @@ sudo certbot --nginx -d deluxfences.com -d www.deluxfences.com
 - `https://deluxfences.com/admin-time`
 - `https://deluxfences.com/time?vehicle=vehicle-01`
 - `https://deluxfences.com/register-device?token=...`
+- `https://deluxfences.com/register-self-vehicle` (araç / iş makinesi ön kayıt formu)
 
 ## Notlar
 

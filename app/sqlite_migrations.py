@@ -1,5 +1,8 @@
 """SQLite-only schema adjustments (legacy DBs). Kept separate to avoid import cycles."""
 
+import secrets
+from datetime import datetime, timezone
+
 from sqlalchemy import text
 
 
@@ -184,4 +187,165 @@ def ensure_reporting_schema(db) -> None:
                 "WHERE corrected_by_role IS NULL OR corrected_by_role = ''"
             )
         )
+        db.commit()
+
+
+def ensure_provisional_vehicle_schema(db) -> None:
+    """Self-service vehicle registration queue (provisional_vehicles)."""
+    has_pv = db.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='provisional_vehicles' LIMIT 1")
+    ).fetchone()
+    if not has_pv:
+        db.execute(
+            text(
+                """
+                CREATE TABLE provisional_vehicles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(120) NOT NULL,
+                    type VARCHAR(50),
+                    notes TEXT,
+                    qr_slug_hint VARCHAR(120),
+                    created_at DATETIME NOT NULL,
+                    status VARCHAR(40) NOT NULL,
+                    vehicle_id INTEGER REFERENCES vehicles(id)
+                )
+                """
+            )
+        )
+        db.commit()
+
+
+def ensure_worker_registration_tokens_schema(db) -> None:
+    has_t = db.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker_registration_tokens' LIMIT 1")
+    ).fetchone()
+    if not has_t:
+        db.execute(
+            text(
+                """
+                CREATE TABLE worker_registration_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    token VARCHAR(255) NOT NULL UNIQUE,
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        db.commit()
+    active = db.execute(text("SELECT 1 FROM worker_registration_tokens WHERE is_active = 1 LIMIT 1")).fetchone()
+    if not active:
+        tok = secrets.token_urlsafe(24)
+        created = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        db.execute(
+            text(
+                "INSERT INTO worker_registration_tokens (token, is_active, created_at) VALUES (:tok, 1, :created)"
+            ),
+            {"tok": tok, "created": created},
+        )
+        db.commit()
+
+
+def ensure_employee_phones_schema(db) -> None:
+    has_ep = db.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='employee_phones' LIMIT 1")
+    ).fetchone()
+    if not has_ep:
+        db.execute(
+            text(
+                """
+                CREATE TABLE employee_phones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER NOT NULL REFERENCES employees(id),
+                    phone VARCHAR(60) NOT NULL,
+                    is_primary BOOLEAN NOT NULL DEFAULT 0,
+                    is_temporary BOOLEAN NOT NULL DEFAULT 0
+                )
+                """
+            )
+        )
+        db.commit()
+    rows = db.execute(
+        text(
+            """
+            SELECT e.id, e.phone_number FROM employees e
+            WHERE e.phone_number IS NOT NULL AND TRIM(e.phone_number) != ''
+            AND NOT EXISTS (SELECT 1 FROM employee_phones ep WHERE ep.employee_id = e.id)
+            """
+        )
+    ).fetchall()
+    for eid, pnum in rows:
+        db.execute(
+            text(
+                "INSERT INTO employee_phones (employee_id, phone, is_primary, is_temporary) "
+                "VALUES (:eid, :ph, 1, 0)"
+            ),
+            {"eid": int(eid), "ph": str(pnum).strip()[:60]},
+        )
+    if rows:
+        db.commit()
+
+
+def ensure_provisional_worker_phone_extensions(db) -> None:
+    cols = db.execute(text("PRAGMA table_info(provisional_workers)")).fetchall()
+    if not cols:
+        return
+    names = {c[1] for c in cols}
+    if "secondary_phone" not in names:
+        db.execute(text("ALTER TABLE provisional_workers ADD COLUMN secondary_phone VARCHAR(60)"))
+        db.commit()
+    if "primary_phone_is_temporary" not in names:
+        db.execute(text("ALTER TABLE provisional_workers ADD COLUMN primary_phone_is_temporary BOOLEAN DEFAULT 0"))
+        db.commit()
+
+
+def ensure_admin_users_schema(db) -> None:
+    """admin_users for FastAPI admin login (idempotent)."""
+    has_t = db.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_users' LIMIT 1")
+    ).fetchone()
+    if not has_t:
+        db.execute(
+            text(
+                """
+                CREATE TABLE admin_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    role VARCHAR(32) NOT NULL DEFAULT 'owner',
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    force_password_change BOOLEAN NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        db.commit()
+        return
+    names = {c[1] for c in db.execute(text("PRAGMA table_info(admin_users)")).fetchall()}
+    if "force_password_change" not in names:
+        db.execute(text("ALTER TABLE admin_users ADD COLUMN force_password_change BOOLEAN NOT NULL DEFAULT 0"))
+        db.commit()
+
+
+def ensure_password_reset_tokens_schema(db) -> None:
+    has_t = db.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='password_reset_tokens' LIMIT 1")
+    ).fetchone()
+    if not has_t:
+        db.execute(
+            text(
+                """
+                CREATE TABLE password_reset_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES admin_users(id),
+                    token_hash VARCHAR(128) NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    used BOOLEAN NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        db.execute(text("CREATE INDEX ix_password_reset_tokens_token_hash ON password_reset_tokens (token_hash)"))
         db.commit()

@@ -7,17 +7,33 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 
+from .admin_auth_middleware import AdminAuthMiddleware
+from .admin_users_seed import seed_owner_admin_users
 from .config import APP_NAME, TIMEZONE
 from .database import Base, SessionLocal, engine
 from .models import Employee, TimeEntry, Vehicle
-from .routes import admin_time, time_routes
-from .sqlite_migrations import ensure_provisional_schema, ensure_reporting_schema
+from .routes import admin_auth, admin_time, time_routes
+from .routes.admin_auth import change_password_router
+from .routes.admin_password_reset import password_reset_router
+from .sqlite_migrations import (
+    ensure_employee_phones_schema,
+    ensure_provisional_schema,
+    ensure_provisional_vehicle_schema,
+    ensure_provisional_worker_phone_extensions,
+    ensure_reporting_schema,
+    ensure_worker_registration_tokens_schema,
+    ensure_password_reset_tokens_schema,
+)
 
 app = FastAPI(title=APP_NAME, version="2.0.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 BERLIN_TZ = ZoneInfo(TIMEZONE)
 
+app.add_middleware(AdminAuthMiddleware)
+app.include_router(admin_auth.router)
+app.include_router(change_password_router)
+app.include_router(password_reset_router)
 app.include_router(time_routes.router)
 app.include_router(admin_time.router)
 
@@ -26,6 +42,11 @@ def seed_data():
     with SessionLocal() as db:
         ensure_provisional_schema(db)
         ensure_reporting_schema(db)
+        ensure_provisional_vehicle_schema(db)
+        ensure_worker_registration_tokens_schema(db)
+        ensure_password_reset_tokens_schema(db)
+        ensure_employee_phones_schema(db)
+        ensure_provisional_worker_phone_extensions(db)
         cols = db.execute(text("PRAGMA table_info(employees)")).fetchall()
         col_names = {c[1] for c in cols}
         if "phone_number" not in col_names and cols:
@@ -87,6 +108,7 @@ def seed_data():
                 Vehicle(name="Truck-01", type="truck", qr_code_slug="vehicle-02", active=True),
             ])
         db.commit()
+        seed_owner_admin_users(db)
 
 
 def as_berlin(dt):

@@ -14,7 +14,10 @@
     <p>Aşağıdaki bilgiler doğruysa onaylayın.</p>
     <div class="info-box" style="margin:12px 0">
       <div class="info-box-row"><span>Ad Soyad</span><strong>{{ full_name }}</strong></div>
-      <div class="info-box-row"><span>Telefon</span><strong class="font-mono">{{ phone }}</strong></div>
+      <div class="info-box-row"><span>Birincil telefon</span><strong class="font-mono">{{ phone }}</strong>{% if primary_phone_is_temporary %} <span class="badge badge-amber" style="margin-left:6px">Geçici</span>{% endif %}</div>
+      {% if secondary_phone %}
+      <div class="info-box-row"><span>İkinci telefon</span><strong class="font-mono">{{ secondary_phone }}</strong></div>
+      {% endif %}
       <div class="info-box-row"><span>Doğum tarihi</span><strong>{{ date_of_birth }}</strong></div>
     </div>
     <form method="post" action="/register-self/confirm">

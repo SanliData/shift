@@ -10,14 +10,12 @@ from sqlalchemy import select
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-for key in list(sys.modules):
-    if key == "app" or key.startswith("app."):
-        del sys.modules[key]
 
 from app.database import SessionLocal
 from app.main import app
 from app.models import Device, Employee, RegistrationToken
 from app.routes.admin_time import build_whatsapp_link
+from tests.helpers_admin import login_admin
 
 
 def _create_employee(name: str) -> int:
@@ -50,6 +48,7 @@ def test_device_link_returns_only_unused_tokens_and_register_link_is_gone():
     employee_id = _create_employee("Token Source User")
     try:
         with TestClient(app) as client:
+            login_admin(client)
             p1 = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
             dep = client.post("/admin-time/register-link", data={"employee_id": employee_id})
             assert dep.status_code == 410
@@ -69,6 +68,7 @@ def test_whatsapp_helper_includes_register_link_from_device_link():
     employee_id = _create_employee("WA Link User")
     try:
         with TestClient(app) as client:
+            login_admin(client)
             payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
         reg_link = payload["register_link"]
         assert payload["active"] is True and payload["used"] is False
@@ -93,6 +93,7 @@ def test_device_link_ignores_used_true_active_true_legacy_token():
             )
             db.commit()
         with TestClient(app) as client:
+            login_admin(client)
             payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
         assert payload["used"] is False
         assert payload["token"] != "bad-used-token-row"
@@ -104,6 +105,7 @@ def test_regenerate_disables_old_and_creates_new_valid_token():
     employee_id = _create_employee("Regenerate User")
     try:
         with TestClient(app) as client:
+            login_admin(client)
             first = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
             client.post(f"/admin-time/employees/{employee_id}/regenerate-link", data={})
             second = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
@@ -122,6 +124,7 @@ def test_register_device_success_then_second_use_rejected():
     employee_id = _create_employee("Register Device User")
     try:
         with TestClient(app) as client:
+            login_admin(client)
             payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
             token = payload["token"]
             first = client.get(f"/register-device?token={token}")
@@ -141,6 +144,7 @@ def test_register_device_failure_does_not_consume_valid_token():
     employee_id = _create_employee("Failure Guard User")
     try:
         with TestClient(app) as client:
+            login_admin(client)
             payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
             token = payload["token"]
             bad = client.get("/register-device?token=this-token-does-not-exist")
@@ -156,6 +160,7 @@ def test_link_preview_does_not_consume_token():
     employee_id = _create_employee("Preview User")
     try:
         with TestClient(app) as client:
+            login_admin(client)
             payload = client.get(f"/admin-time/employees/{employee_id}/device-link").json()
             token = payload["token"]
             preview = client.get(

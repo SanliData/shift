@@ -12,14 +12,12 @@ from sqlalchemy import delete, select
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-for key in list(sys.modules):
-    if key == "app" or key.startswith("app."):
-        del sys.modules[key]
 
 from app.database import SessionLocal
 from app.main import app
 from app.models import Device, Employee, TimeEntry, TimeEntryCorrection, Vehicle
 from app.routes.admin_time import fmt_datetime_local, now_berlin
+from tests.helpers_admin import ADMIN_TEST_EMAIL, login_admin
 
 
 def _cleanup_entry_and_device(entry_id: int | None, device_token: str | None):
@@ -42,6 +40,7 @@ def test_import_main_ok():
 
 def test_admin_time_dashboard_redirect():
     with TestClient(app) as client:
+        login_admin(client)
         r = client.get("/admin-time/dashboard", follow_redirects=False)
         assert r.status_code in (301, 302)
         loc = r.headers.get("location", "")
@@ -50,6 +49,7 @@ def test_admin_time_dashboard_redirect():
 
 def test_reports_page_loads():
     with TestClient(app) as client:
+        login_admin(client)
         r = client.get("/admin-time/reports")
         assert r.status_code == 200
         assert "Günlük Mesai Detayı" in r.text
@@ -108,6 +108,7 @@ def test_employee_profile_vehicle_profile_and_edit_flow():
             entry_id = entry.id
 
         with TestClient(app) as client:
+            login_admin(client)
             pr = client.get(f"/admin-time/employees/{emp_id}/profile")
             assert pr.status_code == 200
             assert emp_name in pr.text
@@ -167,11 +168,12 @@ def test_employee_profile_vehicle_profile_and_edit_flow():
             assert cor.new_employee_id == emp2_id
             assert cor.old_employee_id == emp_id
             assert "Test correction" in (cor.reason or "")
-            assert cor.corrected_by == "admin"
-            assert cor.corrected_by_role == "admin"
+            assert cor.corrected_by == ADMIN_TEST_EMAIL
+            assert cor.corrected_by_role == "owner"
             assert cor.corrected_by_ip is not None
 
         with TestClient(app) as client:
+            login_admin(client)
             pr2 = client.get(f"/admin-time/employees/{emp_id}/profile")
             assert pr2.status_code == 200
             assert "Manuel düzeltme geçmişi" in pr2.text

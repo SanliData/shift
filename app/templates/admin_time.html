@@ -85,19 +85,33 @@
   <div class="section-head">
     <h2>Ön kayıt (QR self-service)</h2>
   </div>
-  <p class="muted" style="margin-bottom:10px">Yeni personel bu link ile kayıt olup mesaiye başlayabilir. Onayladığınızda resmi çalışan oluşturulur ve mesai kayıtları taşınır.</p>
-  <p style="word-break:break-all;font-size:13px"><a href="{{ self_register_link }}" target="_blank" rel="noopener">{{ self_register_link }}</a></p>
+  <p class="muted" style="margin-bottom:10px">Yeni personel bu link ile kayıt olup mesaiye başlayabilir. Onayladığınızda resmi çalışan oluşturulur ve mesai kayıtları taşınır. Eski <code class="font-mono">/register-self</code> adresi otomatik olarak aşağıdaki güvenli bağlantıya yönlendirilir.</p>
+  <p class="small muted" style="margin-bottom:6px">Aktif ön kayıt anahtarı: <code class="font-mono">{{ worker_register_token_preview }}</code></p>
+  <p style="word-break:break-all;font-size:13px"><a href="{{ worker_register_public_url }}" target="_blank" rel="noopener">{{ worker_register_public_url }}</a></p>
+  <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-top:12px">
+    <div>
+      <img src="{{ worker_register_qr_url }}" alt="Ön kayıt QR" width="168" height="168" style="border-radius:10px;border:1px solid var(--border);background:white;padding:6px">
+    </div>
+    <div style="min-width:200px">
+      <form method="post" action="/admin-time/worker-registration/regenerate">
+        <button type="submit" class="btn btn-secondary small">Yeni token üret</button>
+      </form>
+      <p class="small muted" style="margin-top:10px">Token değişince eski QR geçersiz olur; personeli yeni QR ile güncelleyin.</p>
+    </div>
+  </div>
   {% if provisional_dashboard %}
   <div class="table-wrap" style="margin-top:14px">
     <table>
       <thead><tr>
-        <th>Ad</th><th>Telefon</th><th>Doğum</th><th>Durum</th><th>Çalışılan (dk)</th><th>Onay</th>
+        <th>Ad</th><th>Birincil tel.</th><th>İkinci tel.</th><th>Geçici</th><th>Doğum</th><th>Durum</th><th>Çalışılan (dk)</th><th>Onay</th>
       </tr></thead>
       <tbody>
       {% for row in provisional_dashboard %}
       <tr>
         <td><strong>{{ row.full_name }}</strong></td>
         <td class="font-mono">{{ row.phone }}</td>
+        <td class="font-mono small">{{ row.secondary_phone }}</td>
+        <td>{% if row.primary_temp %}<span class="badge badge-amber">Evet</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ row.date_of_birth }}</td>
         <td><span class="badge badge-amber">{{ row.status }}</span></td>
         <td class="fw-700">{{ row.minutes }}</td>

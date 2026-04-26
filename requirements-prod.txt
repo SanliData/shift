@@ -8,3 +8,5 @@ openpyxl
 qrcode[pil]
 pillow
 python-dotenv
+bcrypt
+PyJWT

@@ -20,15 +20,28 @@ from ..database import get_db
 from ..models import (
     Device,
     Employee,
+    EmployeePhone,
     ImportedFile,
+    ProvisionalVehicle,
     ProvisionalWorker,
+    PV_VEHICLE_APPROVED,
+    PV_VEHICLE_PENDING,
+    PV_VEHICLE_REJECTED,
     RegistrationToken,
     TimeEntry,
     TimeEntryCorrection,
     Vehicle,
+    WorkerRegistrationToken,
 )
 from ..models import PW_STATUS_ACTIVE, PW_STATUS_DEACTIVATED, PW_STATUS_PENDING
-from ..sqlite_migrations import ensure_provisional_schema, ensure_reporting_schema
+from ..sqlite_migrations import (
+    ensure_employee_phones_schema,
+    ensure_provisional_schema,
+    ensure_provisional_vehicle_schema,
+    ensure_provisional_worker_phone_extensions,
+    ensure_reporting_schema,
+    ensure_worker_registration_tokens_schema,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -144,12 +157,16 @@ def hours_str(minutes: int | float | None) -> str:
 
 
 def correction_request_audit(request: Request) -> tuple[str, str, str | None, str | None]:
-    """Placeholder identity until admin auth exists; store request fingerprint."""
+    """Audit identity from admin session; fallback only if state missing."""
     client_ip = request.client.host if request.client else None
     ua = request.headers.get("user-agent")
     if ua and len(ua) > 4000:
         ua = ua[:4000]
-    return "admin", "admin", client_ip, ua
+    email = getattr(request.state, "admin_email", None) or ""
+    role = getattr(request.state, "admin_role", None) or ""
+    if not email:
+        return "admin", "admin", client_ip, ua
+    return email, role or "owner", client_ip, ua
 
 
 def time_entry_original_snapshot(
@@ -252,8 +269,119 @@ def build_register_link(token: str) -> str:
     return f"{BASE_URL}/register-device?token={token}"
 
 
-def build_self_register_link() -> str:
-    return f"{BASE_URL}/register-self"
+def build_self_register_vehicle_link() -> str:
+    return f"{BASE_URL}/register-self-vehicle"
+
+
+def _ensure_worker_phone_migrations(db: Session) -> None:
+    ensure_worker_registration_tokens_schema(db)
+    ensure_employee_phones_schema(db)
+    ensure_provisional_worker_phone_extensions(db)
+
+
+def get_active_worker_registration_token(db: Session) -> WorkerRegistrationToken | None:
+    _ensure_worker_phone_migrations(db)
+    return db.scalar(
+        select(WorkerRegistrationToken)
+        .where(WorkerRegistrationToken.is_active.is_(True))
+        .order_by(desc(WorkerRegistrationToken.id))
+        .limit(1)
+    )
+
+
+def get_or_create_active_worker_registration_token(db: Session) -> WorkerRegistrationToken:
+    _ensure_worker_phone_migrations(db)
+    row = get_active_worker_registration_token(db)
+    if not row:
+        tok = token_urlsafe(24)
+        row = WorkerRegistrationToken(token=tok, is_active=True, created_at=now_berlin())
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def regenerate_worker_registration_token(db: Session) -> WorkerRegistrationToken:
+    _ensure_worker_phone_migrations(db)
+    for r in db.scalars(select(WorkerRegistrationToken).where(WorkerRegistrationToken.is_active.is_(True))).all():
+        r.is_active = False
+    tok = token_urlsafe(24)
+    row = WorkerRegistrationToken(token=tok, is_active=True, created_at=now_berlin())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def build_worker_register_public_url(db: Session) -> str:
+    row = get_or_create_active_worker_registration_token(db)
+    return f"{BASE_URL}/worker-register/{row.token}"
+
+
+def validate_worker_gate_token(db: Session, raw_token: str) -> WorkerRegistrationToken | None:
+    clean = (raw_token or "").strip()
+    if not clean:
+        return None
+    _ensure_worker_phone_migrations(db)
+    return db.scalar(
+        select(WorkerRegistrationToken).where(
+            WorkerRegistrationToken.token == clean,
+            WorkerRegistrationToken.is_active.is_(True),
+        )
+    )
+
+
+def employee_primary_phone_row(db: Session, employee_id: int) -> EmployeePhone | None:
+    ensure_employee_phones_schema(db)
+    return db.scalar(
+        select(EmployeePhone).where(
+            EmployeePhone.employee_id == employee_id,
+            EmployeePhone.is_primary.is_(True),
+        )
+    )
+
+
+def employee_primary_phone_string(db: Session, emp: Employee) -> str:
+    if emp.id:
+        ep = employee_primary_phone_row(db, emp.id)
+        if ep and ep.phone:
+            return ep.phone.strip()
+    return (emp.phone_number or "").strip()
+
+
+def sync_employee_phone_number_cache(db: Session, employee_id: int) -> None:
+    emp = db.get(Employee, employee_id)
+    if not emp:
+        return
+    ep = employee_primary_phone_row(db, employee_id)
+    emp.phone_number = (ep.phone.strip()[:40] if ep and ep.phone else None)
+
+
+def find_employee_id_with_permanent_primary_digits(db: Session, digits: str) -> int | None:
+    """Another employee's non-temporary primary phone (normalized digits)."""
+    if not digits:
+        return None
+    ensure_employee_phones_schema(db)
+    for ep in db.scalars(
+        select(EmployeePhone).where(
+            EmployeePhone.is_primary.is_(True),
+            EmployeePhone.is_temporary.is_(False),
+        )
+    ).all():
+        if normalize_phone_digits(ep.phone) == digits:
+            return ep.employee_id
+    return None
+
+
+def allocate_unique_vehicle_slug(db: Session, desired: str) -> str:
+    base = to_slug(desired) or "vehicle"
+    slug = base[:120]
+    n = 0
+    while db.scalar(select(Vehicle.id).where(Vehicle.qr_code_slug == slug)):
+        n += 1
+        suffix = f"-{n}"
+        slug = (base[: 120 - len(suffix)] + suffix) if len(base) + len(suffix) > 120 else base + suffix
+    return slug
 
 
 def provisional_sign(provisional_id: int) -> str:
@@ -415,6 +543,7 @@ def render_admin_time(
     ensure_registration_token_columns(db)
     ensure_provisional_schema(db)
     ensure_reporting_schema(db)
+    _ensure_worker_phone_migrations(db)
     employees = db.scalars(select(Employee).order_by(Employee.name)).all()
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.qr_code_slug)).all()
     devices = db.scalars(
@@ -465,6 +594,8 @@ def render_admin_time(
                 "id": pw.id,
                 "full_name": pw.full_name,
                 "phone": pw.phone,
+                "secondary_phone": (pw.secondary_phone or "").strip() or "—",
+                "primary_temp": bool(getattr(pw, "primary_phone_is_temporary", False)),
                 "date_of_birth": pw.date_of_birth or "—",
                 "status": pw.status,
                 "minutes": int(mins or 0),
@@ -527,7 +658,7 @@ def render_admin_time(
             }
             continue
         register_link_value = build_register_link(token_row.token)
-        digits = normalize_phone_digits(emp.phone_number)
+        digits = normalize_phone_digits(employee_primary_phone_string(db, emp))
         wa_url = build_whatsapp_link(digits, register_link_value) if digits else ""
         sms_uri = build_sms_uri(digits, register_link_value) if digits else ""
         last_sent = as_berlin(token_row.last_sent_at).strftime("%d.%m.%Y %H:%M") if token_row.last_sent_at else "-"
@@ -550,6 +681,9 @@ def render_admin_time(
             func.coalesce(func.sum(TimeEntry.overtime_minutes), 0),
         ).where(TimeEntry.status == "completed")
     ).one()
+    _wrt = get_or_create_active_worker_registration_token(db)
+    _wtoken = _wrt.token
+    _wpreview = (_wtoken[:16] + "…") if len(_wtoken) > 16 else _wtoken
     return templates.TemplateResponse(
         request=request,
         name="admin_time.html",
@@ -583,7 +717,9 @@ def render_admin_time(
                 "vehicle_id": vehicle_id or "",
             },
             "message": message,
-            "self_register_link": build_self_register_link(),
+            "worker_register_public_url": f"{BASE_URL}/worker-register/{_wtoken}",
+            "worker_register_token_preview": _wpreview,
+            "worker_register_qr_url": "/admin-time/worker-registration/qr",
             "provisional_dashboard": provisional_dashboard,
         },
     )
@@ -623,24 +759,42 @@ def create_employee(
     phone = phone_number.strip()
     if not name:
         return render_admin_time(request, db, message="Ad-soyad boş olamaz.")
+    ensure_employee_phones_schema(db)
+    if phone:
+        d = normalize_phone_digits(phone)
+        if d and find_employee_id_with_permanent_primary_digits(db, d) is not None:
+            return render_admin_time(
+                request,
+                db,
+                message="Bu telefon numarası kalıcı birincil olarak başka bir çalışanda kayıtlı.",
+            )
     exists = db.scalar(select(Employee).where(Employee.name == name, Employee.phone_number == phone))
     if exists:
         return render_admin_time(request, db, message="Bu çalışan zaten kayıtlı.")
     is_active = str(active).lower() in ("1", "true", "yes", "on")
-    db.add(
-        Employee(
-            name=name,
-            phone_number=phone,
-            hourly_rate=max(0, float(hourly_rate or 0)),
-            overtime_hourly_rate=(
-                max(0, parse_optional_float(overtime_hourly_rate))
-                if parse_optional_float(overtime_hourly_rate) is not None
-                else None
-            ),
-            overtime_multiplier=max(1.0, float(overtime_multiplier or 1.5)),
-            active=is_active,
-        )
+    emp = Employee(
+        name=name,
+        phone_number=phone or None,
+        hourly_rate=max(0, float(hourly_rate or 0)),
+        overtime_hourly_rate=(
+            max(0, parse_optional_float(overtime_hourly_rate))
+            if parse_optional_float(overtime_hourly_rate) is not None
+            else None
+        ),
+        overtime_multiplier=max(1.0, float(overtime_multiplier or 1.5)),
+        active=is_active,
     )
+    db.add(emp)
+    db.flush()
+    if phone:
+        db.add(
+            EmployeePhone(
+                employee_id=emp.id,
+                phone=phone.strip()[:60],
+                is_primary=True,
+                is_temporary=False,
+            )
+        )
     db.commit()
     return render_admin_time(request, db, message=f"{name} için çalışan kaydı oluşturuldu.")
 
@@ -664,15 +818,186 @@ def update_employee(
     if not name:
         return render_admin_time(request, db, message="Ad soyad boş olamaz.")
     employee.name = name
-    employee.phone_number = phone_number.strip() or None
+    ensure_employee_phones_schema(db)
+    pn = phone_number.strip()
+    employee.phone_number = pn or None
+    if pn:
+        ep = employee_primary_phone_row(db, employee_id)
+        if ep:
+            if not ep.is_temporary:
+                d = normalize_phone_digits(pn)
+                if d:
+                    oid = find_employee_id_with_permanent_primary_digits(db, d)
+                    if oid is not None and oid != employee_id:
+                        return render_admin_time(
+                            request,
+                            db,
+                            message="Bu telefon numarası kalıcı birincil olarak başka bir çalışanda kayıtlı.",
+                        )
+            ep.phone = pn[:60]
+        else:
+            d = normalize_phone_digits(pn)
+            if d:
+                oid = find_employee_id_with_permanent_primary_digits(db, d)
+                if oid is not None and oid != employee_id:
+                    return render_admin_time(
+                        request,
+                        db,
+                        message="Bu telefon numarası kalıcı birincil olarak başka bir çalışanda kayıtlı.",
+                    )
+            db.add(
+                EmployeePhone(
+                    employee_id=employee_id,
+                    phone=pn[:60],
+                    is_primary=True,
+                    is_temporary=False,
+                )
+            )
+    else:
+        for ep in db.scalars(
+            select(EmployeePhone).where(
+                EmployeePhone.employee_id == employee_id,
+                EmployeePhone.is_primary.is_(True),
+            )
+        ).all():
+            db.delete(ep)
     hourly_parsed = parse_optional_float(hourly_rate.strip() if hourly_rate else "")
     employee.hourly_rate = max(0.0, float(hourly_parsed if hourly_parsed is not None else 0.0))
     parsed_ot_rate = parse_optional_float(overtime_hourly_rate.strip() if overtime_hourly_rate else "")
     employee.overtime_hourly_rate = max(0, parsed_ot_rate) if parsed_ot_rate is not None else None
     employee.overtime_multiplier = max(1.0, float(overtime_multiplier or 1.5))
     employee.active = str(active).lower() in ("1", "true", "yes", "on")
+    sync_employee_phone_number_cache(db, employee_id)
     db.commit()
     return render_admin_time(request, db, message="Çalışan bilgileri güncellendi.")
+
+
+@router.post("/admin-time/employees/{employee_id}/phones/add", response_class=HTMLResponse)
+def employee_phone_add(
+    employee_id: int,
+    phone: str = Form(...),
+    is_primary: str = Form("false"),
+    is_temporary: str = Form("false"),
+    db: Session = Depends(get_db),
+):
+    emp = db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    ensure_employee_phones_schema(db)
+    p = (phone or "").strip()
+    if not p:
+        return RedirectResponse(
+            url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Telefon boş.')}",
+            status_code=303,
+        )
+    want_primary = str(is_primary).lower() in ("1", "true", "yes", "on")
+    temp = str(is_temporary).lower() in ("1", "true", "yes", "on")
+    d = normalize_phone_digits(p)
+    if want_primary and not temp and d:
+        oid = find_employee_id_with_permanent_primary_digits(db, d)
+        if oid is not None and oid != employee_id:
+            return RedirectResponse(
+                url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Bu numara başka çalışanda kalıcı birincil.')}",
+                status_code=303,
+            )
+    if want_primary:
+        for ep in db.scalars(
+            select(EmployeePhone).where(
+                EmployeePhone.employee_id == employee_id,
+                EmployeePhone.is_primary.is_(True),
+            )
+        ).all():
+            ep.is_primary = False
+    db.add(EmployeePhone(employee_id=employee_id, phone=p[:60], is_primary=want_primary, is_temporary=temp))
+    sync_employee_phone_number_cache(db, employee_id)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Telefon eklendi.')}",
+        status_code=303,
+    )
+
+
+@router.post("/admin-time/employees/{employee_id}/phones/{phone_id}/set-primary", response_class=HTMLResponse)
+def employee_phone_set_primary(employee_id: int, phone_id: int, db: Session = Depends(get_db)):
+    ep = db.get(EmployeePhone, phone_id)
+    if not ep or ep.employee_id != employee_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    ensure_employee_phones_schema(db)
+    if not ep.is_temporary:
+        d = normalize_phone_digits(ep.phone)
+        if d:
+            oid = find_employee_id_with_permanent_primary_digits(db, d)
+            if oid is not None and oid != employee_id:
+                return RedirectResponse(
+                    url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Bu numara başka çalışanda kalıcı birincil.')}",
+                    status_code=303,
+                )
+    for x in db.scalars(
+        select(EmployeePhone).where(
+            EmployeePhone.employee_id == employee_id,
+            EmployeePhone.is_primary.is_(True),
+        )
+    ).all():
+        x.is_primary = False
+    ep.is_primary = True
+    sync_employee_phone_number_cache(db, employee_id)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Birincil güncellendi.')}",
+        status_code=303,
+    )
+
+
+@router.post("/admin-time/employees/{employee_id}/phones/{phone_id}/delete", response_class=HTMLResponse)
+def employee_phone_delete(employee_id: int, phone_id: int, db: Session = Depends(get_db)):
+    ep = db.get(EmployeePhone, phone_id)
+    if not ep or ep.employee_id != employee_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if ep.is_primary:
+        others_list = db.scalars(
+            select(EmployeePhone)
+            .where(
+                EmployeePhone.employee_id == employee_id,
+                EmployeePhone.id != phone_id,
+            )
+            .order_by(EmployeePhone.id)
+        ).all()
+        if not others_list:
+            return RedirectResponse(
+                url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Son telefonu silemezsiniz.')}",
+                status_code=303,
+            )
+        promote = others_list[0]
+        promote.is_primary = True
+    db.delete(ep)
+    sync_employee_phone_number_cache(db, employee_id)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Telefon silindi.')}",
+        status_code=303,
+    )
+
+
+@router.post("/admin-time/employees/{employee_id}/phones/{phone_id}/make-permanent", response_class=HTMLResponse)
+def employee_phone_make_permanent(employee_id: int, phone_id: int, db: Session = Depends(get_db)):
+    ep = db.get(EmployeePhone, phone_id)
+    if not ep or ep.employee_id != employee_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    d = normalize_phone_digits(ep.phone)
+    if d:
+        oid = find_employee_id_with_permanent_primary_digits(db, d)
+        if oid is not None and oid != employee_id:
+            return RedirectResponse(
+                url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Bu numara başka çalışanda kalıcı birincil.')}",
+                status_code=303,
+            )
+    ep.is_temporary = False
+    sync_employee_phone_number_cache(db, employee_id)
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin-time/employees/{employee_id}/profile?msg={quote('Geçici işareti kaldırıldı.')}",
+        status_code=303,
+    )
 
 
 @router.post("/admin-time/register-link")
@@ -702,7 +1027,7 @@ def employee_device_link(
             return RedirectResponse("/admin-time?message=Çalışan+pasif.", status_code=303)
         return JSONResponse({"detail": "Çalışan pasif."}, status_code=400)
     register_link = build_register_link(token_row.token)
-    phone_digits = normalize_phone_digits(employee.phone_number)
+    phone_digits = normalize_phone_digits(employee_primary_phone_string(db, employee))
     if channel_name in ("whatsapp", "sms"):
         if not phone_digits:
             db.commit()
@@ -739,7 +1064,7 @@ def regenerate_employee_link(
     if not row:
         return render_admin_time(request, db, message="Çalışan pasif.")
     register_link = build_register_link(row.token)
-    phone_digits = normalize_phone_digits(employee.phone_number)
+    phone_digits = normalize_phone_digits(employee_primary_phone_string(db, employee))
     channel_name = (channel or "").lower()
     if channel_name in ("whatsapp", "sms"):
         if not phone_digits:
@@ -811,7 +1136,7 @@ def register_device(request: Request, token: str, db: Session = Depends(get_db))
             "message": "Kayıt linki hazır. Cihazı kaydet butonuna basın.",
             "token": clean_token,
             "employee_name": employee.name if employee else "",
-            "employee_phone": employee.phone_number if employee else "",
+            "employee_phone": employee_primary_phone_string(db, employee) if employee else "",
         },
     )
 
@@ -861,7 +1186,7 @@ def register_device_confirm(request: Request, token: str = Form(...), db: Sessio
             "awaiting_confirm": False,
             "message": "Cihaz başarıyla kaydedildi.",
             "employee_name": employee.name if employee else "",
-            "employee_phone": employee.phone_number if employee else "",
+            "employee_phone": employee_primary_phone_string(db, employee) if employee else "",
             "time_entry_url": time_entry_url,
         },
     )
@@ -877,36 +1202,98 @@ def register_device_confirm(request: Request, token: str = Form(...), db: Sessio
     return resp
 
 
-@router.get("/register-self", response_class=HTMLResponse)
-def register_self_form(request: Request):
+@router.get("/register-self")
+def register_self_redirect_to_worker_gate(db: Session = Depends(get_db)):
+    """Legacy URL: always redirect to the current token-gated worker registration page."""
+    row = get_or_create_active_worker_registration_token(db)
+    return RedirectResponse(url=f"/worker-register/{row.token}", status_code=302)
+
+
+@router.post("/register-self/start")
+def register_self_start_redirect_to_worker_gate(db: Session = Depends(get_db)):
+    """Old form action: send users to the token URL (they must re-submit on the new form)."""
+    row = get_or_create_active_worker_registration_token(db)
+    return RedirectResponse(url=f"/worker-register/{row.token}", status_code=303)
+
+
+@router.get("/worker-register/{token}", response_class=HTMLResponse)
+def worker_register_form(request: Request, token: str, db: Session = Depends(get_db)):
+    if not validate_worker_gate_token(db, token):
+        return templates.TemplateResponse(
+            request=request,
+            name="worker_register_invalid.html",
+            context={"request": request},
+            status_code=404,
+        )
     return templates.TemplateResponse(
         request=request,
-        name="register_self.html",
-        context={"request": request},
+        name="worker_register.html",
+        context={"request": request, "gate_token": token},
     )
 
 
-@router.post("/register-self/start", response_class=HTMLResponse)
-def register_self_start(
+@router.post("/worker-register/{token}/start", response_class=HTMLResponse)
+def worker_register_start(
     request: Request,
+    token: str,
     full_name: str = Form(...),
     phone: str = Form(...),
+    secondary_phone: str = Form(""),
+    primary_phone_temporary: str = Form(""),
     date_of_birth: str = Form(""),
     db: Session = Depends(get_db),
 ):
     ensure_provisional_schema(db)
+    if not validate_worker_gate_token(db, token):
+        return templates.TemplateResponse(
+            request=request,
+            name="worker_register_invalid.html",
+            context={"request": request},
+            status_code=404,
+        )
     name = (full_name or "").strip()
     ph = (phone or "").strip()
+    sec = (secondary_phone or "").strip() or None
+    is_temp = str(primary_phone_temporary).lower() in ("1", "true", "yes", "on")
     if not name or not ph:
         return templates.TemplateResponse(
             request=request,
-            name="register_self.html",
-            context={"request": request, "error": "Ad soyad ve telefon zorunludur."},
+            name="worker_register.html",
+            context={
+                "request": request,
+                "gate_token": token,
+                "error": "Ad soyad ve birincil telefon zorunludur.",
+                "full_name": name,
+                "phone": ph,
+                "secondary_phone": (sec or "").strip(),
+                "primary_phone_temporary": is_temp,
+                "date_of_birth": (date_of_birth or "").strip(),
+            },
         )
+    digits = normalize_phone_digits(ph)
+    if not is_temp and digits:
+        conflict_eid = find_employee_id_with_permanent_primary_digits(db, digits)
+        if conflict_eid is not None:
+            return templates.TemplateResponse(
+                request=request,
+                name="worker_register.html",
+                context={
+                    "request": request,
+                    "gate_token": token,
+                    "error": "Bu telefon numarası kalıcı birincil olarak başka bir çalışanda kayıtlı. Geçici telefon olarak işaretleyin veya farklı bir numara kullanın.",
+                    "full_name": name,
+                    "phone": ph,
+                    "secondary_phone": (sec or "").strip() if sec else "",
+                    "primary_phone_temporary": is_temp,
+                    "date_of_birth": (date_of_birth or "").strip(),
+                },
+            )
     dob = (date_of_birth or "").strip() or None
     pw = ProvisionalWorker(
         full_name=name,
         phone=ph,
+        secondary_phone=sec,
+        primary_phone_is_temporary=is_temp,
         date_of_birth=dob,
         device_token=None,
         created_at=now_berlin(),
@@ -917,6 +1304,21 @@ def register_self_start(
     db.refresh(pw)
     key = provisional_sign(pw.id)
     return RedirectResponse(url=f"/register-self/device?pid={pw.id}&key={key}", status_code=303)
+
+
+@router.post("/admin-time/worker-registration/regenerate")
+def worker_registration_regenerate(db: Session = Depends(get_db)):
+    regenerate_worker_registration_token(db)
+    return RedirectResponse("/admin-time?message=Yeni+ön+kayıt+linki+üretildi.", status_code=303)
+
+
+@router.get("/admin-time/worker-registration/qr")
+def worker_registration_qr_png(db: Session = Depends(get_db)):
+    url = f"{BASE_URL}/worker-register/{get_or_create_active_worker_registration_token(db).token}"
+    img = qrcode.make(url).convert("RGB")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return Response(content=buffer.getvalue(), media_type="image/png")
 
 
 @router.get("/register-self/device", response_class=HTMLResponse)
@@ -948,6 +1350,8 @@ def register_self_device_page(request: Request, pid: int, key: str, db: Session 
             "key": key,
             "full_name": pw.full_name,
             "phone": pw.phone,
+            "secondary_phone": (pw.secondary_phone or "").strip(),
+            "primary_phone_is_temporary": bool(pw.primary_phone_is_temporary),
             "date_of_birth": pw.date_of_birth or "—",
         },
     )
@@ -1025,6 +1429,109 @@ def register_self_confirm(
     return resp
 
 
+@router.get("/register-self-vehicle", response_class=HTMLResponse)
+def register_self_vehicle_form(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="register_self_vehicle.html",
+        context={"request": request},
+    )
+
+
+@router.post("/register-self-vehicle/start", response_class=HTMLResponse)
+def register_self_vehicle_start(
+    request: Request,
+    name: str = Form(...),
+    type: str = Form(""),
+    notes: str = Form(""),
+    qr_slug_hint: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    ensure_provisional_vehicle_schema(db)
+    clean_name = (name or "").strip()
+    if not clean_name:
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self_vehicle.html",
+            context={"request": request, "error": "Araç / makine adı zorunludur."},
+        )
+    clean_type = (type or "").strip().lower() or None
+    clean_notes = (notes or "").strip() or None
+    raw_hint = (qr_slug_hint or "").strip()
+    slug_hint = to_slug(raw_hint) if raw_hint else None
+    if slug_hint == "":
+        slug_hint = None
+    pv = ProvisionalVehicle(
+        name=clean_name[:120],
+        type=clean_type,
+        notes=clean_notes,
+        qr_slug_hint=(slug_hint[:120] if slug_hint else None),
+        created_at=now_berlin(),
+        status=PV_VEHICLE_PENDING,
+        vehicle_id=None,
+    )
+    db.add(pv)
+    db.commit()
+    return RedirectResponse("/register-self-vehicle/done", status_code=303)
+
+
+@router.get("/register-self-vehicle/done", response_class=HTMLResponse)
+def register_self_vehicle_done(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="register_self_vehicle_done.html",
+        context={"request": request},
+    )
+
+
+@router.get("/admin-time/register-self-vehicle/qr")
+def self_register_vehicle_qr_png():
+    url = build_self_register_vehicle_link()
+    img = qrcode.make(url).convert("RGB")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return Response(content=buffer.getvalue(), media_type="image/png")
+
+
+@router.post("/admin-time/provisional-vehicles/{pv_id}/approve", response_class=HTMLResponse)
+def approve_provisional_vehicle(
+    pv_id: int,
+    request: Request,
+    qr_code_slug: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    ensure_provisional_vehicle_schema(db)
+    pv = db.scalar(select(ProvisionalVehicle).where(ProvisionalVehicle.id == pv_id))
+    if not pv or pv.status != PV_VEHICLE_PENDING:
+        return admin_time_vehicles(request, message="Araç ön kaydı bulunamadı veya zaten işlendi.", db=db)
+    slug_input = (qr_code_slug or "").strip()
+    if slug_input:
+        desired = to_slug(slug_input) or None
+    else:
+        desired = None
+    if not desired:
+        desired = (pv.qr_slug_hint or "").strip() or to_slug(pv.name) or "vehicle"
+    slug = allocate_unique_vehicle_slug(db, desired)
+    veh = Vehicle(name=pv.name.strip(), type=pv.type, qr_code_slug=slug, active=True)
+    db.add(veh)
+    db.flush()
+    pv.vehicle_id = veh.id
+    pv.status = PV_VEHICLE_APPROVED
+    db.commit()
+    return admin_time_vehicles(request, message=f"{veh.name} araç olarak eklendi (QR slug: {slug}).", db=db)
+
+
+@router.post("/admin-time/provisional-vehicles/{pv_id}/reject", response_class=HTMLResponse)
+def reject_provisional_vehicle(pv_id: int, request: Request, db: Session = Depends(get_db)):
+    ensure_provisional_vehicle_schema(db)
+    pv = db.scalar(select(ProvisionalVehicle).where(ProvisionalVehicle.id == pv_id))
+    if not pv or pv.status != PV_VEHICLE_PENDING:
+        return admin_time_vehicles(request, message="Kayıt bulunamadı.", db=db)
+    pv.status = PV_VEHICLE_REJECTED
+    db.commit()
+    return admin_time_vehicles(request, message="Araç ön kaydı reddedildi.", db=db)
+
+
 @router.post("/admin-time/provisional-workers/{pw_id}/approve", response_class=HTMLResponse)
 def approve_provisional_worker(
     pw_id: int,
@@ -1040,20 +1547,13 @@ def approve_provisional_worker(
     if not pw or pw.status != PW_STATUS_ACTIVE:
         return render_admin_time(request, db, message="Ön kayıt bulunamadı veya onaylanamaz durumda.")
     digits = normalize_phone_digits(pw.phone)
-    if digits:
-        conflict = next(
-            (
-                e
-                for e in db.scalars(select(Employee)).all()
-                if normalize_phone_digits(e.phone_number) == digits
-            ),
-            None,
-        )
-        if conflict:
+    if digits and not pw.primary_phone_is_temporary:
+        conflict_eid = find_employee_id_with_permanent_primary_digits(db, digits)
+        if conflict_eid is not None:
             return render_admin_time(
                 request,
                 db,
-                message="Bu telefon numarasıyla kayıtlı çalışan zaten var. Önce mevcut kaydı düzenleyin.",
+                message="Bu telefon numarası kalıcı birincil olarak başka bir çalışanda kayıtlı. Önce mevcut kaydı düzenleyin.",
             )
     ot_parsed = parse_optional_float(overtime_hourly_rate)
     is_active = str(active).lower() in ("1", "true", "yes", "on")
@@ -1067,6 +1567,25 @@ def approve_provisional_worker(
     )
     db.add(emp)
     db.flush()
+    ensure_employee_phones_schema(db)
+    db.add(
+        EmployeePhone(
+            employee_id=emp.id,
+            phone=pw.phone.strip()[:60],
+            is_primary=True,
+            is_temporary=bool(pw.primary_phone_is_temporary),
+        )
+    )
+    if pw.secondary_phone and pw.secondary_phone.strip():
+        db.add(
+            EmployeePhone(
+                employee_id=emp.id,
+                phone=pw.secondary_phone.strip()[:60],
+                is_primary=False,
+                is_temporary=False,
+            )
+        )
+    sync_employee_phone_number_cache(db, emp.id)
 
     db.execute(
         update(TimeEntry)
@@ -1280,11 +1799,22 @@ def admin_time_dashboard_redirect():
 
 
 @router.get("/admin-time/employees/{employee_id}/profile", response_class=HTMLResponse)
-def admin_employee_profile(request: Request, employee_id: int, db: Session = Depends(get_db)):
+def admin_employee_profile(
+    request: Request,
+    employee_id: int,
+    msg: str = Query(default=""),
+    db: Session = Depends(get_db),
+):
     ensure_reporting_schema(db)
+    ensure_employee_phones_schema(db)
     employee = db.get(Employee, employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
+    employee_phones = db.scalars(
+        select(EmployeePhone)
+        .where(EmployeePhone.employee_id == employee_id)
+        .order_by(EmployeePhone.is_primary.desc(), EmployeePhone.id)
+    ).all()
     entries = db.scalars(
         select(TimeEntry)
         .where(TimeEntry.employee_id == employee_id, TimeEntry.status == "completed")
@@ -1338,6 +1868,8 @@ def admin_employee_profile(request: Request, employee_id: int, db: Session = Dep
             "request": request,
             "berlin_now": now_berlin().strftime("%d.%m.%Y %H:%M:%S"),
             "employee": employee,
+            "employee_phones": employee_phones,
+            "profile_message": (msg or "").strip(),
             "worked_days": len(day_set),
             "total_normal_hours": f"{(total_reg_m / 60):.2f}",
             "total_overtime_hours": f"{(total_ot_m / 60):.2f}",
@@ -2035,6 +2567,7 @@ def export_xlsx(db: Session = Depends(get_db)):
 
 @router.get("/admin-time/vehicles", response_class=HTMLResponse)
 def admin_time_vehicles(request: Request, message: str = "", db: Session = Depends(get_db)):
+    ensure_provisional_vehicle_schema(db)
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.qr_code_slug)).all()
     active_vehicles = [v for v in vehicles if v.active]
     rows = []
@@ -2063,10 +2596,34 @@ def admin_time_vehicles(request: Request, message: str = "", db: Session = Depen
         }
         for v in vehicles
     ]
+    pending_pv = db.scalars(
+        select(ProvisionalVehicle)
+        .where(ProvisionalVehicle.status == PV_VEHICLE_PENDING)
+        .order_by(desc(ProvisionalVehicle.created_at))
+    ).all()
+    provisional_vehicle_rows = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "type": p.type or "—",
+            "notes": (p.notes or "")[:400],
+            "slug_hint": p.qr_slug_hint or "",
+            "created": as_berlin(p.created_at).strftime("%d.%m.%Y %H:%M"),
+        }
+        for p in pending_pv
+    ]
     return templates.TemplateResponse(
         request=request,
         name="admin_time_vehicles.html",
-        context={"request": request, "vehicles": rows, "all_vehicles": all_rows, "message": message},
+        context={
+            "request": request,
+            "vehicles": rows,
+            "all_vehicles": all_rows,
+            "message": message,
+            "self_vehicle_register_link": build_self_register_vehicle_link(),
+            "self_vehicle_qr_url": "/admin-time/register-self-vehicle/qr",
+            "provisional_vehicle_rows": provisional_vehicle_rows,
+        },
     )
 
 

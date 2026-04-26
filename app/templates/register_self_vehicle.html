@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Araç ön kayıt</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card">
+    <div style="margin-bottom:16px">
+      <div style="display:inline-flex;align-items:center;gap:8px;background:var(--primary);color:white;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700">
+        <span style="background:var(--accent);color:var(--primary);border-radius:4px;padding:2px 6px;font-size:11px">CF</span>
+        CLOUDIA FIELD OS
+      </div>
+    </div>
+    <h2>Araç / iş makinesi ön kayıt</h2>
+    <p style="font-size:13px;color:var(--text-3);line-height:1.5">Sahada yeni bir araç veya makine ekliyorsanız formu doldurun. Yönetici onayından sonra QR ile mesaiye açılır.</p>
+    {% if error %}
+    <div class="alert error" style="margin:12px 0">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/register-self-vehicle/start" style="margin-top:16px">
+      <div class="form-group">
+        <label>Araç / makine adı *</label>
+        <input type="text" name="name" required placeholder="Örn. Excavator-05">
+      </div>
+      <div class="form-group">
+        <label>Tip</label>
+        <select name="type">
+          <option value="">— Seçin (isteğe bağlı) —</option>
+          <option value="excavator">🚜 Ekskavatör</option>
+          <option value="truck">🚛 Kamyon</option>
+          <option value="van">🚐 Minibüs</option>
+          <option value="crane">🏗️ Vinç</option>
+          <option value="drill">🔧 Delici</option>
+          <option value="generator">⚡ Jeneratör</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>QR slug (isteğe bağlı)</label>
+        <input type="text" name="qr_slug_hint" placeholder="vehicle-05 — boş bırakılırsa isimden üretilir">
+      </div>
+      <div class="form-group">
+        <label>Not</label>
+        <textarea name="notes" rows="2" placeholder="Plaka, seri no, lokasyon…"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary large" style="width:100%">Gönder — yönetici onayı</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>
