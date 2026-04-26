@@ -1,9 +1,6 @@
 # ============================================================
 # CLOUDIA FIELD OS — Data Models
 # ============================================================
-# TODO (v3 multi-tenant): Add company_id: Mapped[int] = mapped_column(
-#     ForeignKey("companies.id"), nullable=False, index=True
-# ) to Employee, Vehicle, TimeEntry, RegistrationToken models
 
 from datetime import datetime
 
@@ -11,6 +8,11 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+# provisional_workers.status
+PW_STATUS_PENDING = "pending_registration"
+PW_STATUS_ACTIVE = "active"
+PW_STATUS_DEACTIVATED = "deactivated"
 
 
 class Employee(Base):
@@ -24,21 +26,37 @@ class Employee(Base):
     overtime_hourly_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # TODO (v3): company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    devices = relationship("Device", back_populates="employee", foreign_keys="Device.employee_id")
 
-    devices = relationship("Device", back_populates="employee")
+
+class ProvisionalWorker(Base):
+    __tablename__ = "provisional_workers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    phone: Mapped[str] = mapped_column(String(60), nullable=False)
+    date_of_birth: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+
+    devices = relationship("Device", back_populates="provisional_worker", foreign_keys="Device.provisional_worker_id")
 
 
 class Device(Base):
     __tablename__ = "devices"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
+    provisional_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("provisional_workers.id"), nullable=True, index=True
+    )
     device_token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    employee = relationship("Employee", back_populates="devices")
+    employee = relationship("Employee", back_populates="devices", foreign_keys=[employee_id])
+    provisional_worker = relationship("ProvisionalWorker", back_populates="devices", foreign_keys=[provisional_worker_id])
 
 
 class Vehicle(Base):
@@ -50,14 +68,15 @@ class Vehicle(Base):
     qr_code_slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # TODO (v3): company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
-
 
 class TimeEntry(Base):
     __tablename__ = "time_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False)
+    employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
+    provisional_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("provisional_workers.id"), nullable=True, index=True
+    )
     employee_name: Mapped[str] = mapped_column(String(120), nullable=False)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), nullable=False)
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
@@ -70,8 +89,6 @@ class TimeEntry(Base):
     overtime_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
-
-    # TODO (v3): company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
 
 
 class RegistrationToken(Base):

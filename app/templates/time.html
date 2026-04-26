@@ -30,13 +30,16 @@
       <!-- Employee + Vehicle Info -->
       <div class="time-info-card">
         <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px">Çalışan Bilgileri</div>
+        {% if is_provisional %}
+        <div class="alert warning" style="margin-bottom:10px;font-size:12px">Ön kayıt: yönetici onayından sonra resmi çalışan kaydınıza geçer.</div>
+        {% endif %}
         <div class="time-info-row">
           <span>👤 Çalışan</span>
-          <span>{{ employee.name }}</span>
+          <span>{{ worker_name }}</span>
         </div>
         <div class="time-info-row">
           <span>📞 Telefon</span>
-          <span class="font-mono">{{ employee.phone_number or "—" }}</span>
+          <span class="font-mono">{{ worker_phone }}</span>
         </div>
         <div class="time-info-row">
           <span>🚛 Araç / Makine</span>

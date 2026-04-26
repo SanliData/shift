@@ -80,6 +80,50 @@
   </div>
 </div>
 
+<!-- Provisional workers (self-registration) -->
+<div class="card">
+  <div class="section-head">
+    <h2>Ön kayıt (QR self-service)</h2>
+  </div>
+  <p class="muted" style="margin-bottom:10px">Yeni personel bu link ile kayıt olup mesaiye başlayabilir. Onayladığınızda resmi çalışan oluşturulur ve mesai kayıtları taşınır.</p>
+  <p style="word-break:break-all;font-size:13px"><a href="{{ self_register_link }}" target="_blank" rel="noopener">{{ self_register_link }}</a></p>
+  {% if provisional_dashboard %}
+  <div class="table-wrap" style="margin-top:14px">
+    <table>
+      <thead><tr>
+        <th>Ad</th><th>Telefon</th><th>Doğum</th><th>Durum</th><th>Çalışılan (dk)</th><th>Onay</th>
+      </tr></thead>
+      <tbody>
+      {% for row in provisional_dashboard %}
+      <tr>
+        <td><strong>{{ row.full_name }}</strong></td>
+        <td class="font-mono">{{ row.phone }}</td>
+        <td>{{ row.date_of_birth }}</td>
+        <td><span class="badge badge-amber">{{ row.status }}</span></td>
+        <td class="fw-700">{{ row.minutes }}</td>
+        <td>
+          {% if row.can_approve %}
+          <form method="post" action="/admin-time/provisional-workers/{{ row.id }}/approve" class="stack-actions" style="gap:6px">
+            <input type="number" name="hourly_rate" step="0.01" min="0" value="20" required style="max-width:90px" title="€/saat">
+            <input type="number" name="overtime_hourly_rate" step="0.01" min="0" placeholder="FM €/saat" style="max-width:90px">
+            <input type="number" name="overtime_multiplier" step="0.1" min="1" value="1.5" style="max-width:70px" title="Çarpan">
+            <select name="active"><option value="true" selected>Aktif</option><option value="false">Pasif</option></select>
+            <button type="submit" class="btn btn-primary small">Çalışan yap</button>
+          </form>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin-top:8px">Henüz ön kayıt yok.</p>
+  {% endif %}
+</div>
+
 <!-- Employee Table -->
 <div class="card">
   <div class="section-head">
@@ -225,7 +269,11 @@
       <tbody>
       {% for d in devices %}
       <tr>
-        <td>{{ d.employee.name if d.employee else "—" }}</td>
+        <td>
+          {% if d.employee %}<strong>{{ d.employee.name }}</strong>
+          {% elif d.provisional_worker %}<strong>{{ d.provisional_worker.full_name }}</strong> <span class="badge badge-amber">ön kayıt</span>
+          {% else %}—{% endif %}
+        </td>
         <td class="font-mono">{{ d.device_token[:12] }}…</td>
         <td>{{ d.created_at.strftime("%d.%m.%Y %H:%M") if d.created_at else "—" }}</td>
         <td>

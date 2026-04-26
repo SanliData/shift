@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Cihaz onayı</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card">
+    {% if ok and awaiting_confirm %}
+    <h2>Cihazı kaydet</h2>
+    <p>Aşağıdaki bilgiler doğruysa onaylayın.</p>
+    <div class="info-box" style="margin:12px 0">
+      <div class="info-box-row"><span>Ad Soyad</span><strong>{{ full_name }}</strong></div>
+      <div class="info-box-row"><span>Telefon</span><strong class="font-mono">{{ phone }}</strong></div>
+      <div class="info-box-row"><span>Doğum tarihi</span><strong>{{ date_of_birth }}</strong></div>
+    </div>
+    <form method="post" action="/register-self/confirm">
+      <input type="hidden" name="pid" value="{{ pid }}">
+      <input type="hidden" name="key" value="{{ key }}">
+      <button type="submit" class="btn btn-primary large" style="width:100%">Bu cihazı kaydet</button>
+    </form>
+    {% elif ok and not awaiting_confirm %}
+    <div class="register-icon ok">✅</div>
+    <h2>Kayıt tamam</h2>
+    <p>{{ message }}</p>
+    {% if time_entry_url %}
+    <a href="{{ time_entry_url }}" class="btn btn-primary large" style="width:100%;margin-top:12px">Mesai ekranına git</a>
+    {% endif %}
+    {% else %}
+    <div class="register-icon fail">❌</div>
+    <h2>İşlem yapılamadı</h2>
+    <p>{{ message }}</p>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

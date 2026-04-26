@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import io
 import logging
 import re
@@ -10,12 +12,22 @@ import qrcode
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import desc, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
-from ..config import BASE_URL, COOKIE_SECURE, TIMEZONE
+from ..config import BASE_URL, COOKIE_SECURE, REGISTRATION_SIGNING_SECRET, TIMEZONE
 from ..database import get_db
-from ..models import Device, Employee, ImportedFile, RegistrationToken, TimeEntry, Vehicle
+from ..models import (
+    Device,
+    Employee,
+    ImportedFile,
+    ProvisionalWorker,
+    RegistrationToken,
+    TimeEntry,
+    Vehicle,
+)
+from ..models import PW_STATUS_ACTIVE, PW_STATUS_DEACTIVATED, PW_STATUS_PENDING
+from ..sqlite_migrations import ensure_provisional_schema
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -102,6 +114,18 @@ def normalize_phone_digits(phone: str | None) -> str:
 
 def build_register_link(token: str) -> str:
     return f"{BASE_URL}/register-device?token={token}"
+
+
+def build_self_register_link() -> str:
+    return f"{BASE_URL}/register-self"
+
+
+def provisional_sign(provisional_id: int) -> str:
+    return hmac.new(
+        REGISTRATION_SIGNING_SECRET.encode("utf-8"),
+        str(provisional_id).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:48]
 
 
 def build_whatsapp_link(phone_digits: str, register_link: str) -> str:
@@ -253,14 +277,17 @@ def render_admin_time(
     message: str = "",
 ):
     ensure_registration_token_columns(db)
+    ensure_provisional_schema(db)
     employees = db.scalars(select(Employee).order_by(Employee.name)).all()
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.qr_code_slug)).all()
     devices = db.scalars(
-        select(Device).options(selectinload(Device.employee)).order_by(desc(Device.created_at))
+        select(Device)
+        .options(selectinload(Device.employee), selectinload(Device.provisional_worker))
+        .order_by(desc(Device.created_at))
     ).all()
     device_counts: dict[int, int] = {}
     for d in devices:
-        if d.active:
+        if d.active and d.employee_id is not None:
             device_counts[d.employee_id] = device_counts.get(d.employee_id, 0) + 1
 
     filters = build_filters(date_from or None, date_to or None, employee_id, vehicle_id)
@@ -274,11 +301,38 @@ def render_admin_time(
     employee_active_map: dict[int, int] = {}
     employee_total_minutes_map: dict[int, int] = {}
     for row in active_entries:
-        employee_active_map[row.employee_id] = employee_active_map.get(row.employee_id, 0) + 1
+        if row.employee_id is not None:
+            employee_active_map[row.employee_id] = employee_active_map.get(row.employee_id, 0) + 1
     all_completed = db.scalars(select(TimeEntry).where(TimeEntry.status == "completed")).all()
     for row in all_completed:
-        employee_total_minutes_map[row.employee_id] = employee_total_minutes_map.get(row.employee_id, 0) + int(
-            row.total_minutes or 0
+        if row.employee_id is not None:
+            employee_total_minutes_map[row.employee_id] = employee_total_minutes_map.get(row.employee_id, 0) + int(
+                row.total_minutes or 0
+            )
+
+    provisional_workers_visible = db.scalars(
+        select(ProvisionalWorker)
+        .where(ProvisionalWorker.status != PW_STATUS_DEACTIVATED)
+        .order_by(desc(ProvisionalWorker.created_at))
+    ).all()
+    provisional_dashboard: list[dict] = []
+    for pw in provisional_workers_visible:
+        mins = db.scalar(
+            select(func.coalesce(func.sum(TimeEntry.total_minutes), 0)).where(
+                TimeEntry.provisional_worker_id == pw.id,
+                TimeEntry.status == "completed",
+            )
+        )
+        provisional_dashboard.append(
+            {
+                "id": pw.id,
+                "full_name": pw.full_name,
+                "phone": pw.phone,
+                "date_of_birth": pw.date_of_birth or "—",
+                "status": pw.status,
+                "minutes": int(mins or 0),
+                "can_approve": pw.status == PW_STATUS_ACTIVE,
+            }
         )
 
     now = now_berlin()
@@ -392,6 +446,8 @@ def render_admin_time(
                 "vehicle_id": vehicle_id or "",
             },
             "message": message,
+            "self_register_link": build_self_register_link(),
+            "provisional_dashboard": provisional_dashboard,
         },
     )
 
@@ -639,6 +695,7 @@ def register_device_confirm(request: Request, token: str = Form(...), db: Sessio
     db.add(
         Device(
             employee_id=reg.employee_id,
+            provisional_worker_id=None,
             device_token=new_token,
             created_at=now_berlin(),
             active=True,
@@ -675,12 +732,216 @@ def register_device_confirm(request: Request, token: str = Form(...), db: Sessio
         DEVICE_COOKIE,
         new_token,
         httponly=True,
-        secure=COOKIE_SECURE,
+        secure=COOKIE_SECURE and request.url.scheme == "https",
         samesite="lax",
         max_age=31536000,
         path="/",
     )
     return resp
+
+
+@router.get("/register-self", response_class=HTMLResponse)
+def register_self_form(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="register_self.html",
+        context={"request": request},
+    )
+
+
+@router.post("/register-self/start", response_class=HTMLResponse)
+def register_self_start(
+    request: Request,
+    full_name: str = Form(...),
+    phone: str = Form(...),
+    date_of_birth: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    ensure_provisional_schema(db)
+    name = (full_name or "").strip()
+    ph = (phone or "").strip()
+    if not name or not ph:
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self.html",
+            context={"request": request, "error": "Ad soyad ve telefon zorunludur."},
+        )
+    dob = (date_of_birth or "").strip() or None
+    pw = ProvisionalWorker(
+        full_name=name,
+        phone=ph,
+        date_of_birth=dob,
+        device_token=None,
+        created_at=now_berlin(),
+        status=PW_STATUS_PENDING,
+    )
+    db.add(pw)
+    db.commit()
+    db.refresh(pw)
+    key = provisional_sign(pw.id)
+    return RedirectResponse(url=f"/register-self/device?pid={pw.id}&key={key}", status_code=303)
+
+
+@router.get("/register-self/device", response_class=HTMLResponse)
+def register_self_device_page(request: Request, pid: int, key: str, db: Session = Depends(get_db)):
+    ensure_provisional_schema(db)
+    if is_preview_request(request):
+        return HTMLResponse("<html><body>Kayıt linki hazır. Lütfen linke tıklayın.</body></html>", status_code=200)
+    pw = db.scalar(select(ProvisionalWorker).where(ProvisionalWorker.id == pid))
+    if not pw or pw.status != PW_STATUS_PENDING:
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self_device.html",
+            context={"request": request, "ok": False, "message": "Kayıt bulunamadı veya zaten tamamlanmış."},
+        )
+    if not hmac.compare_digest(provisional_sign(pid), (key or "").strip()):
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self_device.html",
+            context={"request": request, "ok": False, "message": "Geçersiz doğrulama bağlantısı."},
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="register_self_device.html",
+        context={
+            "request": request,
+            "ok": True,
+            "awaiting_confirm": True,
+            "pid": pid,
+            "key": key,
+            "full_name": pw.full_name,
+            "phone": pw.phone,
+            "date_of_birth": pw.date_of_birth or "—",
+        },
+    )
+
+
+@router.post("/register-self/confirm", response_class=HTMLResponse)
+def register_self_confirm(
+    request: Request,
+    pid: int = Form(...),
+    key: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_provisional_schema(db)
+    pw = db.scalar(select(ProvisionalWorker).where(ProvisionalWorker.id == pid))
+    if not pw or pw.status != PW_STATUS_PENDING:
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self_device.html",
+            context={"request": request, "ok": False, "message": "Kayıt bulunamadı veya zaten tamamlanmış."},
+        )
+    if not hmac.compare_digest(provisional_sign(pid), (key or "").strip()):
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self_device.html",
+            context={"request": request, "ok": False, "message": "Geçersiz doğrulama."},
+        )
+    existing = db.scalar(
+        select(Device).where(Device.provisional_worker_id == pid, Device.active.is_(True))
+    )
+    if existing:
+        return templates.TemplateResponse(
+            request=request,
+            name="register_self_device.html",
+            context={"request": request, "ok": False, "message": "Bu kayıt için cihaz zaten tanımlı."},
+        )
+    new_token = token_urlsafe(32)
+    db.add(
+        Device(
+            employee_id=None,
+            provisional_worker_id=pw.id,
+            device_token=new_token,
+            created_at=now_berlin(),
+            active=True,
+        )
+    )
+    pw.device_token = new_token
+    pw.status = PW_STATUS_ACTIVE
+    db.commit()
+    default_vehicle = db.scalar(select(Vehicle).where(Vehicle.active.is_(True)).order_by(Vehicle.qr_code_slug))
+    time_vehicle = default_vehicle.qr_code_slug if default_vehicle else "vehicle-01"
+    time_entry_url = f"/time?vehicle={time_vehicle}"
+    resp = templates.TemplateResponse(
+        request=request,
+        name="register_self_device.html",
+        context={
+            "request": request,
+            "ok": True,
+            "awaiting_confirm": False,
+            "message": "Cihaz kaydedildi. Mesaiye başlayabilirsiniz.",
+            "full_name": pw.full_name,
+            "phone": pw.phone,
+            "date_of_birth": pw.date_of_birth or "—",
+            "time_entry_url": time_entry_url,
+        },
+    )
+    resp.set_cookie(
+        DEVICE_COOKIE,
+        new_token,
+        httponly=True,
+        secure=COOKIE_SECURE and request.url.scheme == "https",
+        samesite="lax",
+        max_age=31536000,
+        path="/",
+    )
+    return resp
+
+
+@router.post("/admin-time/provisional-workers/{pw_id}/approve", response_class=HTMLResponse)
+def approve_provisional_worker(
+    pw_id: int,
+    request: Request,
+    hourly_rate: float = Form(20.0),
+    overtime_hourly_rate: str = Form(""),
+    overtime_multiplier: float = Form(1.5),
+    active: str = Form("true"),
+    db: Session = Depends(get_db),
+):
+    ensure_provisional_schema(db)
+    pw = db.scalar(select(ProvisionalWorker).where(ProvisionalWorker.id == pw_id))
+    if not pw or pw.status != PW_STATUS_ACTIVE:
+        return render_admin_time(request, db, message="Ön kayıt bulunamadı veya onaylanamaz durumda.")
+    digits = normalize_phone_digits(pw.phone)
+    if digits:
+        conflict = next(
+            (
+                e
+                for e in db.scalars(select(Employee)).all()
+                if normalize_phone_digits(e.phone_number) == digits
+            ),
+            None,
+        )
+        if conflict:
+            return render_admin_time(
+                request,
+                db,
+                message="Bu telefon numarasıyla kayıtlı çalışan zaten var. Önce mevcut kaydı düzenleyin.",
+            )
+    ot_parsed = parse_optional_float(overtime_hourly_rate)
+    is_active = str(active).lower() in ("1", "true", "yes", "on")
+    emp = Employee(
+        name=pw.full_name.strip(),
+        phone_number=pw.phone.strip() or None,
+        hourly_rate=max(0.0, float(hourly_rate or 0)),
+        overtime_multiplier=max(1.0, float(overtime_multiplier or 1.5)),
+        overtime_hourly_rate=(max(0.0, ot_parsed) if ot_parsed is not None else None),
+        active=is_active,
+    )
+    db.add(emp)
+    db.flush()
+
+    db.execute(
+        update(TimeEntry)
+        .where(TimeEntry.provisional_worker_id == pw_id)
+        .values(employee_id=emp.id, employee_name=emp.name, provisional_worker_id=None)
+    )
+    for dev in db.scalars(select(Device).where(Device.provisional_worker_id == pw_id)).all():
+        dev.employee_id = emp.id
+        dev.provisional_worker_id = None
+    pw.status = PW_STATUS_DEACTIVATED
+    db.commit()
+    return render_admin_time(request, db, message=f"{emp.name} çalışan olarak oluşturuldu; mesai kayıtları taşındı.")
 
 
 @router.get("/admin-time/import", response_class=HTMLResponse)

@@ -51,6 +51,9 @@ TIME_FALLBACK_URL = get_setting("TIME_FALLBACK_URL", "https://www.sanli-netzbau.
 
 COOKIE_SECURE = get_bool_setting("COOKIE_SECURE", ENV == "production")
 
+# HMAC for self-registration confirm links (set in production .env)
+REGISTRATION_SIGNING_SECRET = get_setting("REGISTRATION_SIGNING_SECRET", "dev-change-me-not-for-production")
+
 # ---- Multi-tenant readiness ----
 # TODO (v3): Add company_id to all models for multi-tenant SaaS
 # COMPANY_ID = get_setting("COMPANY_ID", "default")

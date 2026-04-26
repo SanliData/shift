@@ -11,6 +11,7 @@ from .config import APP_NAME, TIMEZONE
 from .database import Base, SessionLocal, engine
 from .models import Employee, TimeEntry, Vehicle
 from .routes import admin_time, time_routes
+from .sqlite_migrations import ensure_provisional_schema
 
 app = FastAPI(title=APP_NAME, version="2.0.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -23,6 +24,7 @@ app.include_router(admin_time.router)
 
 def seed_data():
     with SessionLocal() as db:
+        ensure_provisional_schema(db)
         cols = db.execute(text("PRAGMA table_info(employees)")).fetchall()
         col_names = {c[1] for c in cols}
         if "phone_number" not in col_names and cols:

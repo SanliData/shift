@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Ön kayıt</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card">
+    <div style="margin-bottom:16px">
+      <div style="display:inline-flex;align-items:center;gap:8px;background:var(--primary);color:white;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700">
+        <span style="background:var(--accent);color:var(--primary);border-radius:4px;padding:2px 6px;font-size:11px">CF</span>
+        CLOUDIA FIELD OS
+      </div>
+    </div>
+    <h2>Ön kayıt</h2>
+    <p style="font-size:13px;color:var(--text-3);line-height:1.5">Bilgilerinizi girin; ardından cihazınızı onaylayarak mesaiye başlayabilirsiniz. Yönetici onayından sonra resmi çalışan kaydınıza geçer.</p>
+    {% if error %}
+    <div class="alert error" style="margin:12px 0">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/register-self/start" style="margin-top:16px">
+      <div class="form-group">
+        <label>Ad Soyad *</label>
+        <input type="text" name="full_name" required placeholder="Ad Soyad">
+      </div>
+      <div class="form-group">
+        <label>Telefon *</label>
+        <input type="tel" name="phone" required placeholder="+49 170 0000000">
+      </div>
+      <div class="form-group">
+        <label>Doğum tarihi *</label>
+        <input type="date" name="date_of_birth" required>
+      </div>
+      <button type="submit" class="btn btn-primary large" style="width:100%">Devam — cihaz onayı</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>
