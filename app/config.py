@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 
+# ============================================================
+# CLOUDIA FIELD OS — Configuration
+# ============================================================
+
 
 def _read_dotenv_value(key: str) -> str | None:
     env_path = Path(".env")
@@ -30,9 +34,23 @@ def get_bool_setting(key: str, default: bool) -> bool:
     return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
+# ---- App Identity ----
+APP_NAME = "Cloudia Field OS"
+APP_SUBTITLE = "QR-Based Workforce, Asset & Cost Tracking Platform"
+APP_VERSION = "2.0.0"
+
+# ---- Runtime Settings ----
+# BASE_URL should be set via environment variable in production
 BASE_URL = get_setting("BASE_URL", "http://127.0.0.1:8002").rstrip("/")
 TIMEZONE = get_setting("TIMEZONE", "Europe/Berlin")
 ENV = get_setting("ENV", "development").lower()
 DATABASE_URL = get_setting("DATABASE_URL", "sqlite:///./data/app.db")
+
+# Fallback: redirect unregistered devices here
 TIME_FALLBACK_URL = get_setting("TIME_FALLBACK_URL", "https://www.sanli-netzbau.de/")
+
 COOKIE_SECURE = get_bool_setting("COOKIE_SECURE", ENV == "production")
+
+# ---- Multi-tenant readiness ----
+# TODO (v3): Add company_id to all models for multi-tenant SaaS
+# COMPANY_ID = get_setting("COMPANY_ID", "default")

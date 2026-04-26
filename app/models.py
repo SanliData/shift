@@ -1,3 +1,10 @@
+# ============================================================
+# CLOUDIA FIELD OS — Data Models
+# ============================================================
+# TODO (v3 multi-tenant): Add company_id: Mapped[int] = mapped_column(
+#     ForeignKey("companies.id"), nullable=False, index=True
+# ) to Employee, Vehicle, TimeEntry, RegistrationToken models
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
@@ -16,6 +23,8 @@ class Employee(Base):
     overtime_multiplier: Mapped[float] = mapped_column(Float, default=1.5, nullable=False)
     overtime_hourly_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # TODO (v3): company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
 
     devices = relationship("Device", back_populates="employee")
 
@@ -41,6 +50,8 @@ class Vehicle(Base):
     qr_code_slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # TODO (v3): company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+
 
 class TimeEntry(Base):
     __tablename__ = "time_entries"
@@ -59,6 +70,8 @@ class TimeEntry(Base):
     overtime_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+
+    # TODO (v3): company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
 
 
 class RegistrationToken(Base):

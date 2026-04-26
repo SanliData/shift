@@ -1,104 +1,132 @@
 {% extends "base.html" %}
+{% block page_title %}Assets / Araçlar{% endblock %}
+{% block page_subtitle %}QR Kod Yönetimi{% endblock %}
+
 {% block content %}
-<section class="card">
-    <h2>Araç QR Yönetimi</h2>
-    <p>QR kodlar sadece araç/iş makinesi içindir ve <code>/time?vehicle=vehicle_slug</code> formatına gider.</p>
-    {% if message %}<p class="msg success">{{ message }}</p>{% endif %}
-</section>
+{% if message %}
+<div class="alert {% if 'bulunamadı' in message or 'boş' in message or 'başka' in message or 'zaten' in message %}error{% else %}success{% endif %}">{{ message }}</div>
+{% endif %}
 
-<section class="card">
-    <h3>Yeni Araç / İş Makinesi Ekle</h3>
-    <form class="filters" method="post" action="/admin-time/vehicles">
-        <div>
-            <label>Araç Adı</label>
-            <input type="text" id="new_vehicle_name" name="name" placeholder="Excavator-02" required>
-        </div>
-        <div>
-            <label>Tip</label>
-            <input type="text" name="type" placeholder="excavator / truck / crew">
-        </div>
-        <div>
-            <label>QR Slug</label>
-            <input type="text" id="new_vehicle_slug" name="qr_code_slug" placeholder="Boş bırakırsanız otomatik üretilir">
-        </div>
-        <div class="filter-actions">
-            <button class="btn btn-primary small" type="submit">Araç Ekle</button>
-        </div>
-    </form>
-</section>
-
-<section class="card">
-    <h3>Aktif Araçlar (QR Üretimi)</h3>
-    <div class="vehicle-grid">
-        {% for v in vehicles %}
-        <article class="card vehicle-card">
-            <h4>{{ v.name }}</h4>
-            <span class="badge">{{ v.type }}</span>
-            <img class="qr-thumb" src="{{ v.qr_img_url }}" alt="QR {{ v.slug }}">
-            <p class="muted">{{ v.slug }}</p>
-            <p class="muted"><a href="{{ v.qr_link }}">{{ v.qr_link }}</a></p>
-            <a class="btn btn-primary small" href="{{ v.qr_download_url }}" download="qr-{{ v.slug }}-print.png">Download QR</a>
-        </article>
-        {% else %}
-        <p>Aktif araç bulunamadı.</p>
-        {% endfor %}
+<!-- Add Vehicle -->
+<div class="card">
+  <div class="section-head">
+    <h2>Yeni Araç / İş Makinesi Ekle</h2>
+  </div>
+  <form method="post" action="/admin-time/vehicles">
+    <div class="dialog-body" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;padding:16px 20px">
+      <div class="form-group"><label>Araç Adı *</label><input type="text" name="name" required placeholder="Excavator-03"></div>
+      <div class="form-group">
+        <label>Araç Tipi</label>
+        <select name="type">
+          <option value="">— Seçin —</option>
+          <option value="excavator">🚜 Ekskavatör</option>
+          <option value="truck">🚛 Kamyon</option>
+          <option value="van">🚐 Minibüs</option>
+          <option value="crane">🏗️ Vinç</option>
+          <option value="drill">🔧 Delici</option>
+          <option value="generator">⚡ Jeneratör</option>
+        </select>
+      </div>
+      <div class="form-group"><label>QR Slug (boş = otomatik)</label><input type="text" name="qr_code_slug" placeholder="vehicle-03"></div>
+      <div><button type="submit" class="btn btn-primary">+ Ekle</button></div>
     </div>
-</section>
+  </form>
+</div>
 
-<section class="card">
-    <h3>Tüm Araçlar (Düzenle / Durum Yönetimi)</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Ad</th>
-                <th>Tip</th>
-                <th>Slug</th>
-                <th>Durum</th>
-                <th>İşlem</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for v in all_vehicles %}
-            <tr>
-                <td>{{ v.id }}</td>
-                <td>
-                    <form class="inline-form" method="post" action="/admin-time/vehicles/{{ v.id }}/update">
-                        <input type="text" name="name" value="{{ v.name }}" required>
-                </td>
-                <td><input type="text" name="type" value="{{ v.type }}"></td>
-                <td><input type="text" name="qr_code_slug" value="{{ v.slug }}" required></td>
-                <td>{% if v.active %}Aktif{% else %}Pasif{% endif %}</td>
-                <td class="inline-actions">
-                        <button class="btn btn-primary small" type="submit">Güncelle</button>
-                    </form>
-                    {% if v.active %}
-                    <form method="post" action="/admin-time/vehicles/{{ v.id }}/deactivate">
-                        <button class="btn btn-secondary small" type="submit">Pasifleştir</button>
-                    </form>
-                    {% else %}
-                    <form method="post" action="/admin-time/vehicles/{{ v.id }}/activate">
-                        <button class="btn btn-primary small" type="submit">Tekrar Aktif Et</button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="6">Araç bulunamadı.</td></tr>
+<!-- Active Vehicles QR Grid -->
+{% if vehicles %}
+<div class="card">
+  <div class="section-head">
+    <h2>Aktif Araçlar — QR Üretimi</h2>
+    <span class="badge badge-green">{{ vehicles|length }} aktif</span>
+  </div>
+  <div class="qr-grid">
+    {% for v in vehicles %}
+    <div class="qr-card">
+      <div class="qr-card-head">
+        <div class="vehicle-icon">
+          {% if v.type == "excavator" %}🚜{% elif v.type == "truck" %}🚛{% elif v.type == "van" %}🚐{% elif v.type == "crane" %}🏗️{% elif v.type == "drill" %}🔧{% elif v.type == "generator" %}⚡{% else %}🔲{% endif %}
+        </div>
+        <div>
+          <div class="qr-card-name">{{ v.name }}</div>
+          <div class="qr-card-type">{{ v.type or "—" }} · <span class="font-mono">{{ v.slug }}</span></div>
+        </div>
+      </div>
+      <div class="qr-card-img">
+        <img src="{{ v.qr_img_url }}" alt="QR {{ v.name }}" loading="lazy">
+      </div>
+      <div class="qr-card-foot">
+        <a href="{{ v.qr_download_url }}" class="btn btn-accent small" download="qr-{{ v.slug }}.png">⬇️ İndir</a>
+        <a href="{{ v.qr_link }}" class="btn btn-secondary small" target="_blank">🔗 Test</a>
+        <button class="btn btn-secondary small" onclick="copyText('{{ v.qr_link }}','URL')">📋 Kopyala</button>
+      </div>
+      <!-- Edit form -->
+      <details style="padding:0 14px 14px">
+        <summary style="cursor:pointer;font-size:11.5px;color:var(--text-3);padding:8px 0">✏️ Düzenle / Pasifleştir</summary>
+        <form method="post" action="/admin-time/vehicles/{{ v.id }}/update" style="margin-top:8px;display:grid;gap:8px">
+          <input type="text" name="name" value="{{ v.name }}" required>
+          <select name="type">
+            <option value="">— Tip —</option>
+            {% for t in [("excavator","🚜 Ekskavatör"),("truck","🚛 Kamyon"),("van","🚐 Minibüs"),("crane","🏗️ Vinç"),("drill","🔧 Delici"),("generator","⚡ Jeneratör")] %}
+            <option value="{{ t[0] }}" {% if v.type == t[0] %}selected{% endif %}>{{ t[1] }}</option>
             {% endfor %}
-        </tbody>
-    </table>
-</section>
+          </select>
+          <input type="text" name="qr_code_slug" value="{{ v.slug }}" required>
+          <div style="display:flex;gap:6px">
+            <button type="submit" class="btn btn-primary small">Güncelle</button>
+            <button type="button" class="btn btn-danger small"
+              onclick="if(confirm('{{ v.name }} pasif yapılsın mı?')) this.closest('details').querySelector('form[data-deactivate]').submit()">Pasifleştir</button>
+          </div>
+        </form>
+        <form method="post" action="/admin-time/vehicles/{{ v.id }}/deactivate" data-deactivate style="display:none"></form>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-state-icon">🚛</div>
+    <h3>Araç yok</h3>
+    <p>Henüz aktif araç / iş makinesi eklenmemiş.<br>Yukarıdaki formdan ekleyebilirsiniz.</p>
+  </div>
+</div>
+{% endif %}
 
-<script>
-    const nameInput = document.getElementById("new_vehicle_name");
-    const slugInput = document.getElementById("new_vehicle_slug");
-    if (nameInput && slugInput) {
-        nameInput.addEventListener("input", () => {
-            if (slugInput.value.trim() !== "") return;
-            const slug = nameInput.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-            slugInput.placeholder = slug || "Boş bırakırsanız otomatik üretilir";
-        });
-    }
-</script>
+<!-- All Vehicles List -->
+{% if all_vehicles %}
+<div class="card">
+  <div class="section-head"><h2>Tüm Araçlar (Aktif + Pasif)</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Araç Adı</th><th>Tip</th><th>Slug</th><th>Durum</th><th>İşlem</th></tr></thead>
+      <tbody>
+      {% for v in all_vehicles %}
+      <tr>
+        <td><strong>{{ v.name }}</strong></td>
+        <td>{{ v.type or "—" }}</td>
+        <td class="font-mono">{{ v.slug }}</td>
+        <td>
+          {% if v.active %}<span class="badge badge-green">Aktif</span>
+          {% else %}<span class="badge badge-gray">Pasif</span>{% endif %}
+        </td>
+        <td>
+          {% if v.active %}
+          <form method="post" action="/admin-time/vehicles/{{ v.id }}/deactivate" style="display:inline">
+            <button class="btn btn-danger small" type="submit" onclick="return confirm('Pasifleştir?')">Pasifleştir</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin-time/vehicles/{{ v.id }}/activate" style="display:inline">
+            <button class="btn btn-secondary small" type="submit">Aktifleştir</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

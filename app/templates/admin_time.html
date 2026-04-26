@@ -1,377 +1,303 @@
 {% extends "base.html" %}
+{% block page_title %}Workforce{% endblock %}
+{% block page_subtitle %}Çalışan & Cihaz Yönetimi{% endblock %}
+
 {% block content %}
-<section class="card">
-    <div class="section-head">
-        <h2>Admin-Time Dashboard</h2>
-        <button class="btn btn-primary small" type="button" onclick="document.getElementById('employeeModal').showModal()">Yeni çalışan ekle</button>
+{% if message %}
+<div class="alert {% if 'bulunamadı' in message or 'boş' in message or 'zaten' in message %}error{% else %}success{% endif %}">{{ message }}</div>
+{% endif %}
+
+<!-- KPI Row -->
+<div class="kpi-grid">
+  <div class="kpi-card c-blue">
+    <span>Bugün Çalışma</span>
+    <strong>{{ today_hours }}s</strong>
+  </div>
+  <div class="kpi-card c-green">
+    <span>Bu Hafta</span>
+    <strong>{{ week_hours }}s</strong>
+  </div>
+  <div class="kpi-card c-purple">
+    <span>Bu Ay</span>
+    <strong>{{ month_hours }}s</strong>
+  </div>
+  <div class="kpi-card c-amber">
+    <span>Aktif Mesai</span>
+    <strong>{{ active_shift_count }}</strong>
+  </div>
+  <div class="kpi-card c-red">
+    <span>Bugün Maliyet</span>
+    <strong>{{ today_cost_eur }}</strong>
+  </div>
+  <div class="kpi-card c-green">
+    <span>Hafta Maliyet</span>
+    <strong>{{ week_cost_eur }}</strong>
+  </div>
+  <div class="kpi-card c-blue">
+    <span>Ay Maliyet</span>
+    <strong>{{ month_cost_eur }}</strong>
+  </div>
+  <div class="kpi-card c-red">
+    <span>Ay Fazla Mesai</span>
+    <strong>{{ month_overtime_cost_eur }}</strong>
+  </div>
+</div>
+
+<!-- Filter + Export Bar -->
+<div class="card" style="overflow:visible">
+  <form class="filters" method="get" action="/admin-time">
+    <div><label>Tarih Başlangıç</label><input type="date" name="date_from" value="{{ filters.date_from }}" style="min-width:140px"></div>
+    <div><label>Tarih Bitiş</label><input type="date" name="date_to" value="{{ filters.date_to }}" style="min-width:140px"></div>
+    <div>
+      <label>Çalışan</label>
+      <select name="employee_id" style="min-width:140px">
+        <option value="">Tümü</option>
+        {% for e in employees %}<option value="{{ e.id }}" {% if filters.employee_id|string == e.id|string %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+      </select>
     </div>
-    <p class="muted">Europe/Berlin (Frankfurt): {{ berlin_now }}</p>
-    {% if message %}
-    <p class="alert {% if 'bulunamadı' in message or 'Ad soyad boş' in message %}error{% else %}success{% endif %}">{{ message }}</p>
-    {% endif %}
-    <div class="kpi-grid">
-        <article class="kpi-card"><span>Bugün</span><strong>{{ today_hours }} saat</strong></article>
-        <article class="kpi-card"><span>Bu hafta</span><strong>{{ week_hours }} saat</strong></article>
-        <article class="kpi-card"><span>Bu ay</span><strong>{{ month_hours }} saat</strong></article>
-        <article class="kpi-card"><span>Aktif Mesai</span><strong>{{ active_shift_count }}</strong></article>
-        <article class="kpi-card"><span>Bugün Maliyet</span><strong>{{ today_cost_eur }}</strong></article>
-        <article class="kpi-card"><span>Hafta Maliyet</span><strong>{{ week_cost_eur }}</strong></article>
-        <article class="kpi-card"><span>Ay Maliyet</span><strong>{{ month_cost_eur }}</strong></article>
-        <article class="kpi-card"><span>Ay Fazla Mesai Maliyeti</span><strong>{{ month_overtime_cost_eur }}</strong></article>
+    <div>
+      <label>Araç</label>
+      <select name="vehicle_id" style="min-width:140px">
+        <option value="">Tümü</option>
+        {% for v in vehicles %}<option value="{{ v.id }}" {% if filters.vehicle_id|string == v.id|string %}selected{% endif %}>{{ v.name }} ({{ v.qr_code_slug }})</option>{% endfor %}
+      </select>
     </div>
-    {% if missing_rate_employees %}
-    <p class="alert error">Saat ücreti tanımlanmamış: {{ missing_rate_employees|join(", ") }}</p>
-    {% endif %}
-    <form class="filters" method="get" action="/admin-time">
-        <div><label>Tarih Başlangıç</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
-        <div><label>Tarih Bitiş</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
-        <div>
-            <label>Çalışan</label>
-            <select name="employee_id"><option value="">Tümü</option>
-            {% for e in employees %}
-                <option value="{{ e.id }}" {% if filters.employee_id|string == e.id|string %}selected{% endif %}>{{ e.name }}</option>
-            {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label>Araç</label>
-            <select name="vehicle_id"><option value="">Tümü</option>
-            {% for v in vehicles %}
-                <option value="{{ v.id }}" {% if filters.vehicle_id|string == v.id|string %}selected{% endif %}>{{ v.qr_code_slug }}</option>
-            {% endfor %}
-            </select>
-        </div>
-        <div class="filter-actions">
-            <button class="btn btn-primary small" type="submit">Filtrele</button>
-            <a class="btn btn-secondary small" href="/admin-time">Temizle</a>
-        </div>
+    <div class="filter-actions">
+      <button class="btn btn-primary small" type="submit">Filtrele</button>
+      <a class="btn btn-secondary small" href="/admin-time">Temizle</a>
+    </div>
+  </form>
+  <div class="export-links">
+    <span style="font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Export:</span>
+    <a href="/admin-time/export" class="btn btn-secondary small">⬇️ Tüm Veri Excel</a>
+    <form method="get" action="/admin-time/reports/export" class="inline-actions">
+      <input type="month" name="month" required style="min-width:130px">
+      <button class="btn btn-accent small" type="submit">📅 Aylık Rapor Excel</button>
     </form>
+    <a href="/admin-time/reports" class="btn btn-secondary small">📊 Raporlar</a>
+    <a href="/admin-time/vehicles" class="btn btn-secondary small">🚛 Araç QR</a>
+    <a href="/admin-time/import" class="btn btn-secondary small">⬆️ Import</a>
+  </div>
+</div>
 
-    <div class="export-links">
-        <a href="/admin-time/export">Excel Export</a>
-        <a href="/admin-time/reports">Raporlar</a>
-        <form method="get" action="/admin-time/reports/export" class="inline-actions">
-            <input type="month" name="month" required>
-            <button class="btn btn-primary small" type="submit">Aylık Toplu Excel Export</button>
-        </form>
-        <a href="/admin-time/import">Excel Import</a>
-        <a href="/admin-time/vehicles">Araç QR</a>
+<!-- Employee Table -->
+<div class="card">
+  <div class="section-head">
+    <h2>Çalışanlar ({{ employees|length }})</h2>
+    <button class="btn btn-primary small" type="button" onclick="document.getElementById('employeeModal').showModal()">+ Çalışan Ekle</button>
+  </div>
+  {% if missing_rate_employees %}
+  <div class="alert warning" style="margin-top:12px">⚠️ Ücret tanımlanmamış: {{ missing_rate_employees|join(", ") }}</div>
+  {% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Çalışan</th><th>Telefon</th><th>Normal €/saat</th><th>Fazla Mesai €/saat</th>
+        <th>Cihaz</th><th>Durum</th><th>Aktif Mesai</th><th>Toplam Saat</th>
+        <th>Cihaz Kayıt</th><th>İşlemler</th>
+      </tr></thead>
+      <tbody>
+      {% for e in employees %}
+      {% set act = employee_actions.get(e.id, {}) %}
+      <tr>
+        <td><strong>{{ e.name }}</strong></td>
+        <td class="font-mono">{{ e.phone_number or "—" }}</td>
+        <td>
+          {% if e.hourly_rate %}<span class="text-green fw-700">€{{ "%.2f"|format(e.hourly_rate) }}</span>
+          {% else %}<span class="badge badge-red">Tanımsız</span>{% endif %}
+        </td>
+        <td>
+          {% if e.overtime_hourly_rate is not none %}€{{ "%.2f"|format(e.overtime_hourly_rate) }}
+          {% else %}€{{ "%.2f"|format((e.hourly_rate or 0) * (e.overtime_multiplier or 1.5)) }} (x{{ "%.1f"|format(e.overtime_multiplier or 1.5) }}){% endif %}
+        </td>
+        <td><span class="badge badge-blue">{{ device_counts.get(e.id, 0) }} cihaz</span></td>
+        <td>
+          {% if e.active %}<span class="badge badge-green"><span class="status-dot dot-green"></span> Aktif</span>
+          {% else %}<span class="badge badge-gray"><span class="status-dot dot-gray"></span> Pasif</span>{% endif %}
+        </td>
+        <td>
+          {% if employee_active_map.get(e.id, 0) > 0 %}
+          <span class="badge badge-amber">⚡ {{ employee_active_map[e.id] }} aktif</span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="fw-700">{{ "%.1f"|format((employee_total_minutes_map.get(e.id, 0) / 60)) }}s</td>
+        <td class="stack-actions">
+          <button class="btn btn-secondary small" type="button" onclick="generateLink({{ e.id }})">🔗 Kayıt Linki</button>
+          <div id="link-box-{{ e.id }}" style="font-size:11px;word-break:break-all">
+            {% if act.register_link %}
+            <div style="margin-bottom:4px"><a href="{{ act.register_link }}" target="_blank" style="color:var(--blue)">{{ act.register_link }}</a></div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="btn btn-secondary small" onclick="copyText('{{ act.register_link }}','Link')">📋 Kopyala</button>
+              {% if act.wa_url %}<a class="btn btn-secondary small" href="{{ act.wa_url }}" target="_blank">📱 WhatsApp</a>{% endif %}
+              {% if act.sms_uri %}<a class="btn btn-secondary small" href="{{ act.sms_uri }}">💬 SMS</a>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="muted" style="margin-top:2px">
+            Token: <strong id="token-status-{{ e.id }}">{{ act.token_status or "—" }}</strong><br>
+            Gönderim: {{ act.last_sent_at or "—" }}
+          </div>
+          {% if act.token_active %}
+          <form method="post" action="{{ act.regenerate_url }}" style="display:inline">
+            <button class="btn btn-ghost small" type="submit">↻ Yenile</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          <button class="btn btn-secondary small" type="button"
+            onclick="document.getElementById('editModal-{{ e.id }}').showModal()">✏️ Düzenle</button>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Active Entries Table -->
+{% if active_entries %}
+<div class="card">
+  <div class="section-head">
+    <div class="flex gap-8" style="align-items:center">
+      <h2>Aktif Mesailer</h2>
+      <span class="live-badge"><span class="live-dot"></span>CANLI</span>
     </div>
-    <div class="stats">
-        <div><strong>Toplam dk:</strong> {{ total_minutes }}</div>
-        <div><strong>Fazla dk:</strong> {{ overtime_minutes }}</div>
+    <span class="badge badge-green">{{ active_entries|length }}</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Durum</th></tr></thead>
+      <tbody>
+      {% for e in active_entries %}
+      <tr>
+        <td><strong>{{ e.employee_name }}</strong></td>
+        <td class="font-mono">{{ e.vehicle_id }}</td>
+        <td>{{ e.start_time.strftime("%d.%m.%Y %H:%M") if e.start_time else "—" }}</td>
+        <td><span class="badge badge-green"><span class="status-dot dot-green"></span> Çalışıyor</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Completed Entries -->
+<div class="card">
+  <div class="section-head">
+    <h2>Tamamlanan Mesailer</h2>
+    <a href="/admin-time/reports" class="btn btn-ghost small">Detaylı Rapor →</a>
+  </div>
+  {% if completed_entries %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Bitiş</th><th>Toplam</th><th>Fazla Mesai</th><th>Maliyet</th></tr></thead>
+      <tbody>
+      {% for e in completed_entries %}
+      <tr>
+        <td><strong>{{ e.employee_name }}</strong></td>
+        <td class="font-mono">{{ e.vehicle_id }}</td>
+        <td>{{ e.start_time.strftime("%d.%m %H:%M") if e.start_time else "—" }}</td>
+        <td>{{ e.end_time.strftime("%d.%m %H:%M") if e.end_time else "—" }}</td>
+        <td>{{ "%.1f"|format((e.total_minutes or 0)/60) }}s</td>
+        <td>
+          {% if (e.overtime_minutes or 0) > 0 %}<span class="badge badge-amber">{{ "%.0f"|format((e.overtime_minutes or 0)/60) }}s</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="fw-700 text-green">{{ "€%.2f"|format(e.total_cost or 0) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-state-icon">📋</div><h3>Kayıt yok</h3><p>Henüz tamamlanmış mesai bulunmuyor.</p></div>
+  {% endif %}
+</div>
+
+<!-- Devices Table -->
+<div class="card">
+  <div class="section-head"><h2>Kayıtlı Cihazlar</h2></div>
+  {% if devices %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Çalışan</th><th>Token (kısa)</th><th>Kayıt Tarihi</th><th>Durum</th></tr></thead>
+      <tbody>
+      {% for d in devices %}
+      <tr>
+        <td>{{ d.employee.name if d.employee else "—" }}</td>
+        <td class="font-mono">{{ d.device_token[:12] }}…</td>
+        <td>{{ d.created_at.strftime("%d.%m.%Y %H:%M") if d.created_at else "—" }}</td>
+        <td>
+          {% if d.active %}<span class="badge badge-green">Aktif</span>
+          {% else %}<span class="badge badge-gray">Pasif</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-state-icon">📱</div><h3>Cihaz yok</h3><p>Henüz kayıtlı cihaz bulunmuyor.</p></div>
+  {% endif %}
+</div>
+
+<!-- New Employee Modal -->
+<dialog id="employeeModal">
+  <div class="dialog-head">
+    <h3>Yeni Çalışan Ekle</h3>
+    <button type="button" onclick="document.getElementById('employeeModal').close()">✕</button>
+  </div>
+  <form method="post" action="/admin-time/employees">
+    <div class="dialog-body">
+      <div class="form-group"><label>Ad Soyad *</label><input type="text" name="full_name" required placeholder="Mehmet Yılmaz"></div>
+      <div class="form-group"><label>Telefon</label><input type="tel" name="phone_number" placeholder="+49 170 0000000"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Normal €/saat *</label><input type="number" name="hourly_rate" step="0.01" min="0" value="20.00" required></div>
+        <div class="form-group"><label>Fazla Mesai €/saat</label><input type="number" name="overtime_hourly_rate" step="0.01" min="0" placeholder="Boş bırakın → x1.5"></div>
+      </div>
+      <div class="form-group"><label>Fazla Mesai Çarpanı</label><input type="number" name="overtime_multiplier" step="0.1" min="1" value="1.5"></div>
+      <div class="form-group">
+        <label>Durum</label>
+        <select name="active"><option value="true">Aktif</option><option value="false">Pasif</option></select>
+      </div>
     </div>
-</section>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('employeeModal').close()">İptal</button>
+      <button type="submit" class="btn btn-primary">Çalışan Ekle</button>
+    </div>
+  </form>
+</dialog>
 
-<section class="card">
-    <h3>Çalışan Tablosu</h3>
-    <table>
-        <thead><tr><th>Çalışan</th><th>Telefon</th><th>Normal saat ücreti</th><th>Fazla mesai saat ücreti</th><th>Cihaz sayısı</th><th>Aktif/Pasif</th><th>Aktif mesai</th><th>Toplam saat</th><th>Kayıt linki ve gönderim</th><th>İşlemler</th></tr></thead>
-        <tbody>
-        {% for e in employees %}
-            <tr>
-                <td>{{ e.name or "Bilinmiyor" }}</td>
-                <td>{{ e.phone_number or "-" }}</td>
-                <td>{% if e.hourly_rate %}€{{ "%.2f"|format(e.hourly_rate) }}{% else %}<span class="muted">Saat ücreti tanımlanmamış</span>{% endif %}</td>
-                <td>{% if e.overtime_hourly_rate is not none %}€{{ "%.2f"|format(e.overtime_hourly_rate) }}{% else %}€{{ "%.2f"|format((e.hourly_rate or 0) * (e.overtime_multiplier or 1.5)) }}{% endif %}</td>
-                <td>{{ device_counts.get(e.id, 0) }}</td>
-                <td>{% if e.active %}<span class="badge active">Aktif</span>{% else %}<span class="badge">Pasif</span>{% endif %}</td>
-                <td>{{ employee_active_map.get(e.id, 0) }}</td>
-                <td>{{ "%.2f"|format((employee_total_minutes_map.get(e.id, 0) / 60)) }}</td>
-                <td class="stack-actions">
-                    {% set act = employee_actions.get(e.id, {}) %}
-                    <button class="btn btn-primary small" type="button" onclick="generateLink({{ e.id }})">Kayıt Linki Üret</button>
-                    <div id="link-box-{{ e.id }}">
-                        {% if act.register_link %}
-                        <div>
-                            <a href="{{ act.register_link }}" target="_blank" rel="noopener">{{ act.register_link }}</a>
-                        </div>
-                        <button class="btn btn-secondary small" type="button" data-label="Kopyala" data-copy-text="{{ act.register_link }}" onclick="copyRegisterLink(this)">Kopyala</button>
-                        {% if act.wa_url %}
-                        <a class="btn btn-secondary small" href="{{ act.wa_url }}" target="_blank" rel="noopener">WhatsApp</a>
-                        {% endif %}
-                        {% endif %}
-                    </div>
-                    <p class="muted small">Token durumu: <strong id="token-status-{{ e.id }}">{{ act.token_status|default("Token yok") }}</strong></p>
-                    <p class="muted small">Son gönderim: <strong>{{ act.last_sent_at or "-" }}</strong></p>
-                    {% if act.token_active and act.wa_url %}
-                    <a class="btn btn-secondary small" href="{{ act.resend_wa_url }}" target="_blank" rel="noopener" onclick="showToast('Link tekrar gönderildi')">Tekrar Gönder (WhatsApp)</a>
-                    {% else %}
-                    <span class="muted small">Önce kayıt linki üretin / telefon ekleyin.</span>
-                    {% endif %}
-                    {% if act.token_active and act.sms_uri %}
-                    <a class="btn btn-secondary small" href="{{ act.resend_sms_url }}" onclick="showToast('Link tekrar gönderildi')">Tekrar Gönder (SMS)</a>
-                    {% endif %}
-                    {% if act.register_link %}
-                    <form method="post" action="{{ act.regenerate_url }}" class="inline-actions">
-                        <button class="btn btn-secondary small" type="submit">Yeni link üret</button>
-                        <button class="btn btn-secondary small" type="submit" name="channel" value="whatsapp" onclick="showToast('Link tekrar gönderildi')">Yeni link + WhatsApp</button>
-                        <button class="btn btn-secondary small" type="submit" name="channel" value="sms" onclick="showToast('Link tekrar gönderildi')">Yeni link + SMS</button>
-                    </form>
-                    {% endif %}
-                </td>
-                <td class="table-actions">
-                    <button type="button" class="btn btn-secondary small"
-                        data-emp-id="{{ e.id }}"
-                        data-emp-name="{{ e.name|forceescape }}"
-                        data-emp-phone="{{ (e.phone_number or '')|forceescape }}"
-                        data-emp-hourly="{{ '%.2f'|format(e.hourly_rate or 0) }}"
-                        data-emp-ot="{% if e.overtime_hourly_rate is not none %}{{ e.overtime_hourly_rate }}{% endif %}"
-                        data-emp-active="{{ 'true' if e.active else 'false' }}"
-                        data-emp-ot-mult="{{ e.overtime_multiplier or 1.5 }}"
-                        onclick="openEditEmployee(this)">Düzenle</button>
-                </td>
-            </tr>
-        {% else %}
-            <tr><td colspan="10">Çalışan yok.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</section>
-
-<section class="card">
-    <h3>Kayıtlı Cihazlar</h3>
-    <table>
-        <thead><tr><th>ID</th><th>Çalışan</th><th>Telefon</th><th>Kayıt tarihi</th><th>Token</th><th>Aktif/Pasif</th></tr></thead>
-        <tbody>
-        {% for d in devices %}
-            <tr>
-                <td>{{ d.id }}</td>
-                <td>{{ d.employee.name if d.employee else "—" }}</td>
-                <td>{{ d.employee.phone_number if d.employee and d.employee.phone_number else "—" }}</td>
-                <td>{% if d.created_at %}{{ d.created_at.strftime("%d.%m.%Y %H:%M") }}{% else %}—{% endif %}</td>
-                <td>{{ d.device_token[:12] }}...</td>
-                <td>{% if d.active %}<span class="badge active">Aktif</span>{% else %}<span class="badge">Pasif</span>{% endif %}</td>
-            </tr>
-        {% else %}
-            <tr><td colspan="6">Kayıtlı cihaz yok.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</section>
-
-<section class="card">
-    <h3>Aktif Mesailer</h3>
-    <table>
-        <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Durum</th></tr></thead>
-        <tbody>
-        {% for t in active_entries %}
-            <tr><td>{{ t.employee_name }}</td><td>{{ t.vehicle_id }}</td><td>{{ t.start_time }}</td><td>{{ t.status }}</td></tr>
-        {% else %}
-            <tr><td colspan="4">Aktif mesai yok.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</section>
-
-<section class="card">
-    <h3>Tamamlanan Mesailer</h3>
-    <table>
-        <thead><tr><th>Çalışan</th><th>Araç ID</th><th>Başlangıç</th><th>Bitiş</th><th>Dk</th><th>Fazla</th></tr></thead>
-        <tbody>
-        {% for t in completed_entries %}
-            <tr><td>{{ t.employee_name }}</td><td>{{ t.vehicle_id }}</td><td>{{ t.start_time }}</td><td>{{ t.end_time }}</td><td>{{ t.total_minutes }}</td><td>{{ t.overtime_minutes }}</td></tr>
-        {% else %}
-            <tr><td colspan="6">Tamamlanan kayıt yok.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</section>
-
-<dialog id="employeeModal" class="modal">
-    <form method="post" action="/admin-time/employees" class="modal-card">
-        <h3>Yeni çalışan ekle</h3>
-        <label>Ad Soyad</label>
-        <input type="text" name="full_name" placeholder="Mehmet Yilmaz" required>
-        <label>Telefon Numarası</label>
-        <input type="text" name="phone_number" placeholder="+49 170 0000000" required>
-        <label>Normal Saat Ücreti (EUR)</label>
-        <input type="number" name="hourly_rate" min="0" step="0.01" value="0">
-        <label>Fazla Mesai Saat Ücreti (EUR)</label>
-        <input type="number" name="overtime_hourly_rate" min="0" step="0.01" value="">
+<!-- Edit Employee Modals -->
+{% for e in employees %}
+<dialog id="editModal-{{ e.id }}">
+  <div class="dialog-head">
+    <h3>Çalışan Düzenle — {{ e.name }}</h3>
+    <button type="button" onclick="document.getElementById('editModal-{{ e.id }}').close()">✕</button>
+  </div>
+  <form method="post" action="/admin-time/employees/{{ e.id }}/update">
+    <div class="dialog-body">
+      <div class="form-group"><label>Ad Soyad *</label><input type="text" name="full_name" value="{{ e.name }}" required></div>
+      <div class="form-group"><label>Telefon</label><input type="tel" name="phone_number" value="{{ e.phone_number or '' }}"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Normal €/saat</label><input type="number" name="hourly_rate" step="0.01" min="0" value="{{ e.hourly_rate or '' }}"></div>
+        <div class="form-group"><label>Fazla Mesai €/saat</label><input type="number" name="overtime_hourly_rate" step="0.01" min="0" value="{{ e.overtime_hourly_rate or '' }}"></div>
+      </div>
+      <div class="form-group"><label>Fazla Mesai Çarpanı</label><input type="number" name="overtime_multiplier" step="0.1" min="1" value="{{ e.overtime_multiplier or 1.5 }}"></div>
+      <div class="form-group">
         <label>Durum</label>
         <select name="active">
-            <option value="true">Aktif</option>
-            <option value="false">Pasif</option>
+          <option value="true" {% if e.active %}selected{% endif %}>Aktif</option>
+          <option value="false" {% if not e.active %}selected{% endif %}>Pasif</option>
         </select>
-        <div class="inline-actions">
-            <button class="btn btn-primary small" type="submit">Kaydet</button>
-            <button class="btn btn-secondary small" type="button" onclick="document.getElementById('employeeModal').close()">Vazgeç</button>
-        </div>
-    </form>
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-secondary" onclick="document.getElementById('editModal-{{ e.id }}').close()">İptal</button>
+      <button type="submit" class="btn btn-primary">Güncelle</button>
+    </div>
+  </form>
 </dialog>
-
-<dialog id="editEmployeeModal" class="modal">
-    <form method="post" id="editEmployeeForm" class="modal-card modal-card-wide" action="#">
-        <div class="section-head" style="margin:0;padding:0;border:0;">
-            <h3 style="margin:0;">Çalışan düzenle</h3>
-            <button type="button" class="btn btn-secondary small" onclick="document.getElementById('editEmployeeModal').close()">Kapat</button>
-        </div>
-        <label>Ad soyad</label>
-        <input type="text" name="full_name" id="edit_full_name" required autocomplete="name">
-        <label>Telefon</label>
-        <input type="text" name="phone_number" id="edit_phone" autocomplete="tel">
-        <p id="edit_phone_warning" class="phone-warning">Telefon boş bırakıldığında WhatsApp ve SMS ile gönderim kullanılamaz.</p>
-        <div class="form-row-2">
-            <div>
-                <label>Normal saat ücreti (€)</label>
-                <input type="number" name="hourly_rate" id="edit_hourly" min="0" step="0.01" placeholder="0">
-            </div>
-            <div>
-                <label>Fazla mesai saat ücreti (€)</label>
-                <input type="number" name="overtime_hourly_rate" id="edit_ot" min="0" step="0.01" placeholder="Boşsa formül kullanılır">
-            </div>
-        </div>
-        <input type="hidden" name="overtime_multiplier" id="edit_ot_mult" value="1.5">
-        <label>Durum</label>
-        <select name="active" id="edit_active">
-            <option value="true">Aktif</option>
-            <option value="false">Pasif</option>
-        </select>
-        <p class="muted small">Pasif çalışan yeni mesai başlatamaz; geçmiş kayıtlar ve raporlar aynen kalır.</p>
-        <div class="inline-actions">
-            <button class="btn btn-primary small" type="submit">Kaydet</button>
-            <button class="btn btn-secondary small" type="button" onclick="document.getElementById('editEmployeeModal').close()">Vazgeç</button>
-        </div>
-    </form>
-</dialog>
-
-<script>
-async function generateLink(employeeId) {
-    const box = document.getElementById(`link-box-${employeeId}`);
-    if (!box) return;
-    const res = await fetch(`/admin-time/employees/${employeeId}/device-link`, {
-        headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-        let msg = "Link üretilemedi.";
-        try {
-            const err = await res.json();
-            if (err.detail) {
-                msg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
-            }
-        } catch (_) {}
-        box.replaceChildren();
-        const p = document.createElement("p");
-        p.className = "alert error small";
-        p.textContent = msg;
-        box.appendChild(p);
-        return;
-    }
-    const data = await res.json();
-    const link = data.register_link;
-    if (!link) {
-        box.replaceChildren();
-        const p = document.createElement("p");
-        p.className = "muted small";
-        p.textContent = "Kayıt linki alınamadı.";
-        box.appendChild(p);
-        return;
-    }
-    const st = document.getElementById(`token-status-${employeeId}`);
-    if (st) {
-        if (data.used) st.textContent = "Kullanılmış";
-        else if (data.active) st.textContent = "Geçerli token";
-        else st.textContent = "Token yok";
-    }
-    box.replaceChildren();
-    const wrap = document.createElement("div");
-    const a = document.createElement("a");
-    a.href = link;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = link;
-    wrap.appendChild(a);
-    box.appendChild(wrap);
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "btn btn-secondary small";
-    copyBtn.textContent = "Kopyala";
-    copyBtn.addEventListener("click", () => copyLink(link));
-    box.appendChild(copyBtn);
-    const wa = document.createElement("a");
-    wa.className = "btn btn-secondary small";
-    wa.href = "https://wa.me/?text=" + encodeURIComponent(link);
-    wa.target = "_blank";
-    wa.rel = "noopener";
-    wa.textContent = "WhatsApp";
-    box.appendChild(wa);
-}
-
-async function copyLink(text) {
-    if (!text) return;
-    try {
-        await navigator.clipboard.writeText(text);
-        showToast("Kopyalandı");
-    } catch (e) {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        showToast("Kopyalandı");
-    }
-}
-
-function showToast(message) {
-    const toast = document.getElementById("app-toast");
-    if (!toast) return;
-    toast.textContent = message;
-    toast.classList.add("visible");
-    setTimeout(() => toast.classList.remove("visible"), 1800);
-}
-
-function syncEditPhoneWarning() {
-    const phone = document.getElementById("edit_phone").value.trim();
-    const w = document.getElementById("edit_phone_warning");
-    if (!phone) {
-        w.classList.add("visible");
-    } else {
-        w.classList.remove("visible");
-    }
-}
-
-function openEditEmployee(btn) {
-    const id = btn.getAttribute("data-emp-id");
-    const form = document.getElementById("editEmployeeForm");
-    form.action = "/admin-time/employees/" + id + "/update";
-    document.getElementById("edit_full_name").value = btn.getAttribute("data-emp-name") || "";
-    document.getElementById("edit_phone").value = btn.getAttribute("data-emp-phone") || "";
-    document.getElementById("edit_hourly").value = btn.getAttribute("data-emp-hourly") || "0";
-    document.getElementById("edit_ot").value = btn.getAttribute("data-emp-ot") || "";
-    document.getElementById("edit_ot_mult").value = btn.getAttribute("data-emp-ot-mult") || "1.5";
-    document.getElementById("edit_active").value = btn.getAttribute("data-emp-active") === "true" ? "true" : "false";
-    syncEditPhoneWarning();
-    document.getElementById("editEmployeeModal").showModal();
-}
-
-const editPhoneInput = document.getElementById("edit_phone");
-if (editPhoneInput) {
-    editPhoneInput.addEventListener("input", syncEditPhoneWarning);
-}
-
-async function copyRegisterLink(btn) {
-    const text = btn.getAttribute("data-copy-text") || "";
-    if (!text) return;
-    const label = btn.getAttribute("data-label") || "Kopyala";
-    try {
-        await navigator.clipboard.writeText(text);
-        btn.textContent = "Kopyalandı";
-        showToast("Link tekrar gönderildi");
-        setTimeout(() => { btn.textContent = label; }, 1500);
-    } catch (e) {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        btn.textContent = "Kopyalandı";
-        showToast("Link tekrar gönderildi");
-        setTimeout(() => { btn.textContent = label; }, 1500);
-    }
-}
-</script>
-<div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
+{% endfor %}
 {% endblock %}

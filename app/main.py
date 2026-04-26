@@ -7,12 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 
-from .config import TIMEZONE
+from .config import APP_NAME, TIMEZONE
 from .database import Base, SessionLocal, engine
-from .models import Employee, Vehicle
+from .models import Employee, TimeEntry, Vehicle
 from .routes import admin_time, time
 
-app = FastAPI(title="NOVARCHIVE QR Time Demo")
+app = FastAPI(title=APP_NAME, version="2.0.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 BERLIN_TZ = ZoneInfo(TIMEZONE)
@@ -23,7 +23,6 @@ app.include_router(admin_time.router)
 
 def seed_data():
     with SessionLocal() as db:
-        # Lightweight migration for old local DBs.
         cols = db.execute(text("PRAGMA table_info(employees)")).fetchall()
         col_names = {c[1] for c in cols}
         if "phone_number" not in col_names and cols:
@@ -38,116 +37,63 @@ def seed_data():
         if "overtime_hourly_rate" not in col_names and cols:
             db.execute(text("ALTER TABLE employees ADD COLUMN overtime_hourly_rate FLOAT"))
             db.commit()
-
-        time_entry_cols = db.execute(text("PRAGMA table_info(time_entries)")).fetchall()
-        time_entry_col_names = {c[1] for c in time_entry_cols}
-        if "regular_minutes" not in time_entry_col_names and time_entry_cols:
-            db.execute(text("ALTER TABLE time_entries ADD COLUMN regular_minutes INTEGER"))
-            db.commit()
-        if "regular_cost" not in time_entry_col_names and time_entry_cols:
-            db.execute(text("ALTER TABLE time_entries ADD COLUMN regular_cost FLOAT"))
-            db.commit()
-        if "overtime_cost" not in time_entry_col_names and time_entry_cols:
-            db.execute(text("ALTER TABLE time_entries ADD COLUMN overtime_cost FLOAT"))
-            db.commit()
-        if "total_cost" not in time_entry_col_names and time_entry_cols:
-            db.execute(text("ALTER TABLE time_entries ADD COLUMN total_cost FLOAT"))
-            db.commit()
-        vehicle_cols = db.execute(text("PRAGMA table_info(vehicles)")).fetchall()
-        vehicle_col_names = {c[1] for c in vehicle_cols}
-        if "type" not in vehicle_col_names and vehicle_cols:
+        te_cols = db.execute(text("PRAGMA table_info(time_entries)")).fetchall()
+        te_col_names = {c[1] for c in te_cols}
+        for col in ("regular_minutes", "regular_cost", "overtime_cost", "total_cost"):
+            if col not in te_col_names and te_cols:
+                db.execute(text(f"ALTER TABLE time_entries ADD COLUMN {col} FLOAT"))
+                db.commit()
+        v_cols = db.execute(text("PRAGMA table_info(vehicles)")).fetchall()
+        v_col_names = {c[1] for c in v_cols}
+        if "type" not in v_col_names and v_cols:
             db.execute(text("ALTER TABLE vehicles ADD COLUMN type VARCHAR(50)"))
             db.commit()
-        if "active" not in vehicle_col_names and vehicle_cols:
+        if "active" not in v_col_names and v_cols:
             db.execute(text("ALTER TABLE vehicles ADD COLUMN active BOOLEAN DEFAULT 1"))
             db.commit()
-        reg_token_cols = db.execute(text("PRAGMA table_info(registration_tokens)")).fetchall()
-        reg_token_col_names = {c[1] for c in reg_token_cols}
-        if reg_token_cols and "active" not in reg_token_col_names:
+        rt_cols = db.execute(text("PRAGMA table_info(registration_tokens)")).fetchall()
+        rt_col_names = {c[1] for c in rt_cols}
+        if rt_cols and "active" not in rt_col_names:
             db.execute(text("ALTER TABLE registration_tokens ADD COLUMN active BOOLEAN DEFAULT 1"))
             db.commit()
-        if reg_token_cols and "last_sent_at" not in reg_token_col_names:
+        if rt_cols and "last_sent_at" not in rt_col_names:
             db.execute(text("ALTER TABLE registration_tokens ADD COLUMN last_sent_at DATETIME"))
             db.commit()
-        if reg_token_cols:
+        if rt_cols:
             db.execute(text("UPDATE registration_tokens SET used = 0 WHERE used IS NULL"))
             db.execute(text("UPDATE registration_tokens SET active = 1 WHERE active IS NULL"))
             db.execute(text("UPDATE registration_tokens SET active = 0 WHERE used = 1"))
             employee_ids = db.execute(text("SELECT DISTINCT employee_id FROM registration_tokens")).fetchall()
             for row in employee_ids:
-                employee_id = int(row[0])
+                eid = int(row[0])
                 valid_rows = db.execute(
-                    text(
-                        "SELECT id FROM registration_tokens "
-                        "WHERE employee_id = :employee_id AND active = 1 AND used = 0 "
-                        "ORDER BY created_at DESC, id DESC"
-                    ),
-                    {"employee_id": employee_id},
+                    text("SELECT id FROM registration_tokens WHERE employee_id = :eid AND active = 1 AND used = 0 ORDER BY created_at DESC, id DESC"),
+                    {"eid": eid},
                 ).fetchall()
                 for old in valid_rows[1:]:
                     db.execute(text("UPDATE registration_tokens SET active = 0 WHERE id = :id"), {"id": int(old[0])})
             db.commit()
-
         if (db.scalar(select(func.count(Employee.id))) or 0) == 0:
-            db.add_all(
-                [
-                    Employee(
-                        name="Mehmet Yilmaz",
-                        phone_number="+49 170 0000001",
-                        hourly_rate=22.50,
-                        overtime_multiplier=1.5,
-                        overtime_hourly_rate=33.75,
-                        active=True,
-                    ),
-                    Employee(
-                        name="Ali Demir",
-                        phone_number="+49 170 0000002",
-                        hourly_rate=20.00,
-                        overtime_multiplier=1.5,
-                        overtime_hourly_rate=30.00,
-                        active=True,
-                    ),
-                ]
-            )
-        else:
-            # Existing demo records: ensure requested phone numbers are present.
-            me = db.scalar(select(Employee).where(Employee.name == "Mehmet Yilmaz"))
-            ali = db.scalar(select(Employee).where(Employee.name == "Ali Demir"))
-            if me and (not me.phone_number or me.phone_number.startswith("+49 151")):
-                me.phone_number = "+49 170 0000001"
-            if me and not me.hourly_rate:
-                me.hourly_rate = 22.50
-            if me and not me.overtime_multiplier:
-                me.overtime_multiplier = 1.5
-            if me and not me.overtime_hourly_rate:
-                me.overtime_hourly_rate = round(float(me.hourly_rate or 0) * float(me.overtime_multiplier or 1.5), 2)
-            if ali and (not ali.phone_number or ali.phone_number.startswith("+49 151")):
-                ali.phone_number = "+49 170 0000002"
-            if ali and not ali.hourly_rate:
-                ali.hourly_rate = 20.00
-            if ali and not ali.overtime_multiplier:
-                ali.overtime_multiplier = 1.5
-            if ali and not ali.overtime_hourly_rate:
-                ali.overtime_hourly_rate = round(float(ali.hourly_rate or 0) * float(ali.overtime_multiplier or 1.5), 2)
+            db.add_all([
+                Employee(name="Mehmet Yilmaz", phone_number="+49 170 0000001", hourly_rate=22.50, overtime_multiplier=1.5, overtime_hourly_rate=33.75, active=True),
+                Employee(name="Ali Demir", phone_number="+49 170 0000002", hourly_rate=20.00, overtime_multiplier=1.5, overtime_hourly_rate=30.00, active=True),
+            ])
         if (db.scalar(select(func.count(Vehicle.id))) or 0) == 0:
-            db.add_all(
-                [
-                    Vehicle(name="Excavator-01", type="excavator", qr_code_slug="vehicle-01", active=True),
-                    Vehicle(name="Truck-01", type="truck", qr_code_slug="vehicle-02", active=True),
-                ]
-            )
-        else:
-            v1 = db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == "vehicle-01"))
-            v2 = db.scalar(select(Vehicle).where(Vehicle.qr_code_slug == "vehicle-02"))
-            if v1 and not v1.type:
-                v1.type = "excavator"
-            if v1 and v1.active is None:
-                v1.active = True
-            if v2 and not v2.type:
-                v2.type = "truck"
-            if v2 and v2.active is None:
-                v2.active = True
+            db.add_all([
+                Vehicle(name="Excavator-01", type="excavator", qr_code_slug="vehicle-01", active=True),
+                Vehicle(name="Truck-01", type="truck", qr_code_slug="vehicle-02", active=True),
+            ])
         db.commit()
+
+
+def as_berlin(dt):
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=BERLIN_TZ)
+    return dt.astimezone(BERLIN_TZ)
+
+
+def eur(v):
+    return f"\u20ac{float(v or 0):,.2f}"
 
 
 @app.on_event("startup")
@@ -158,18 +104,65 @@ def startup():
 
 @app.get("/")
 def root_redirect():
-    return RedirectResponse(url="https://www.sanli-netzbau.de/")
+    return RedirectResponse(url="/dashboard")
 
 
-@app.get("/shift", response_class=HTMLResponse)
-def shift_root(request: Request):
+@app.get("/shift")
+def shift_redirect():
+    return RedirectResponse(url="/dashboard")
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    from datetime import timedelta
+    with SessionLocal() as db:
+        now = datetime.now(BERLIN_TZ)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=today_start.weekday())
+        month_start = today_start.replace(day=1)
+        all_completed = db.scalars(select(TimeEntry).where(TimeEntry.status == "completed")).all()
+        active_entries = db.scalars(select(TimeEntry).where(TimeEntry.status == "active")).all()
+        completed_entries = db.scalars(select(TimeEntry).where(TimeEntry.status == "completed").order_by(TimeEntry.end_time.desc()).limit(10)).all()
+        today_m = week_m = month_m = 0
+        today_c = week_c = month_c = month_ot_c = 0.0
+        for e in all_completed:
+            if not e.start_time:
+                continue
+            ls = as_berlin(e.start_time)
+            m = int(e.total_minutes or 0)
+            c = float(e.total_cost or 0)
+            oc = float(e.overtime_cost or 0)
+            if ls >= today_start:
+                today_m += m; today_c += c
+            if ls >= week_start:
+                week_m += m; week_c += c
+            if ls >= month_start:
+                month_m += m; month_c += c; month_ot_c += oc
+
     return templates.TemplateResponse(
         request=request,
         name="home.html",
-        context={"request": request, "now_time": datetime.now(BERLIN_TZ).strftime("%d.%m.%Y %H:%M")},
+        context={
+            "request": request,
+            "berlin_now": now.strftime("%d.%m.%Y %H:%M:%S"),
+            "now_berlin_ts": now.timestamp(),
+            "today_hours": round(today_m / 60, 1),
+            "week_hours": round(week_m / 60, 1),
+            "month_hours": round(month_m / 60, 1),
+            "active_shift_count": len(active_entries),
+            "today_cost_eur": eur(today_c),
+            "week_cost_eur": eur(week_c),
+            "month_cost_eur": eur(month_c),
+            "month_overtime_cost_eur": eur(month_ot_c),
+            "active_entries": active_entries,
+            "completed_entries": completed_entries,
+            "missing_rate_employees": [],
+            "message": "",
+        },
     )
 
 
 @app.get("/ui/index.html")
 def ui_index_redirect():
-    return RedirectResponse(url="https://www.sanli-netzbau.de/")
+    from .config import TIME_FALLBACK_URL
+    return RedirectResponse(url=TIME_FALLBACK_URL)

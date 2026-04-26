@@ -1,31 +1,68 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="card time-page">
-    {% if ok %}
-        {% if awaiting_confirm %}
-        <h2>Cihaz Kaydı</h2>
-        <p class="alert success">{{ message or "Kayıt linki hazır." }}</p>
-        {% else %}
-        <h2>Cihaz başarıyla kaydedildi</h2>
-        <p class="alert success">{{ message or "Kayıt tamamlandı." }}</p>
-        {% endif %}
-        {% if employee_name %}
-        <p><strong>Çalışan:</strong> {{ employee_name }}</p>
-        {% endif %}
-        {% if employee_phone %}
-        <p><strong>Telefon:</strong> {{ employee_phone }}</p>
-        {% endif %}
-        {% if awaiting_confirm %}
-        <form method="post" action="/register-device/confirm" class="inline-actions" style="justify-content:center;">
-            <input type="hidden" name="token" value="{{ token }}">
-            <button class="btn btn-primary" type="submit">Cihazı kaydet</button>
-        </form>
-        {% else %}
-        <a class="btn btn-primary" href="{{ time_entry_url or '/time?vehicle=vehicle-01' }}">Mesai ekranına git</a>
-        {% endif %}
-    {% else %}
-        <h2>Kayıt başarısız</h2>
-        <p class="alert error">{{ message or "Bilinmeyen hata." }}</p>
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Cihaz Kaydı</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card">
+    <!-- Logo -->
+    <div style="margin-bottom:20px">
+      <div style="display:inline-flex;align-items:center;gap:8px;background:var(--primary);color:white;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px">
+        <span style="background:var(--accent);color:var(--primary);border-radius:4px;padding:2px 6px;font-size:11px">CF</span>
+        CLOUDIA FIELD OS
+      </div>
+    </div>
+
+    {% if ok and awaiting_confirm %}
+    <!-- STEP 1: Confirm registration -->
+    <div class="register-icon ok">📱</div>
+    <h2>Cihaz Kaydı</h2>
+    <p>Aşağıdaki bilgiler doğru ise <strong>Bu cihazı kaydet</strong> butonuna basın.</p>
+
+    <div class="info-box">
+      <div class="info-box-row"><span>Çalışan</span><strong>{{ employee_name }}</strong></div>
+      <div class="info-box-row"><span>Telefon</span><strong class="font-mono">{{ employee_phone or "—" }}</strong></div>
+    </div>
+
+    <form method="post" action="/register-device/confirm">
+      <input type="hidden" name="token" value="{{ token }}">
+      <button type="submit" class="btn btn-primary large" style="width:100%">Cihazı kaydet — Onayla</button>
+    </form>
+
+    {% elif ok and not awaiting_confirm %}
+    <!-- SUCCESS -->
+    <div class="register-icon ok">✅</div>
+    <h2>Cihaz başarıyla kaydedildi</h2>
+    <p>Telefonunuz başarıyla tanıtıldı. Bundan sonra mesai başlatmak veya bitirmek için iş makinesi üzerindeki QR kodu okutun.</p>
+
+    <div class="info-box">
+      <div class="info-box-row"><span>Çalışan</span><strong>{{ employee_name }}</strong></div>
+      <div class="info-box-row"><span>Telefon</span><strong class="font-mono">{{ employee_phone or "—" }}</strong></div>
+    </div>
+
+    {% if time_entry_url %}
+    <a href="{{ time_entry_url }}" class="btn btn-primary large" style="width:100%;margin-top:4px">▶ Mesai Ekranına Git</a>
     {% endif %}
-</section>
-{% endblock %}
+
+    <p style="margin-top:16px;font-size:12px;color:var(--text-3)">
+      Bu kayıt tek kullanımlıktır. Her cihaz için ayrı kayıt linki gereklidir.
+    </p>
+
+    {% else %}
+    <!-- ERROR -->
+    <div class="register-icon fail">❌</div>
+    <h2>Geçersiz Link</h2>
+    <p>{{ message }}</p>
+    <p style="font-size:12px;color:var(--text-3)">
+      Kayıt linki daha önce kullanılmış veya süresi dolmuş olabilir.<br>
+      Yöneticinizden yeni bir kayıt linki talep edin.
+    </p>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

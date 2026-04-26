@@ -1,55 +1,135 @@
 {% extends "base.html" %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Genel Bakış — Günlük Özet{% endblock %}
+
 {% block content %}
-<section class="hero card">
-    <div>
-        <h2>QR kod ile araç bazlı mesai takip sistemi</h2>
-        <p>Modern dashboard arayüzü ile araç, çalışan ve cihaz süreçlerini tek panelden yönetin.</p>
-        <ul class="check-list">
-            <li>Araç bazlı QR sistemi</li>
-            <li>Çalışan & cihaz yönetimi</li>
-            <li>Mesai başlat / bitir</li>
-            <li>Raporlama</li>
-        </ul>
-    </div>
-    <div class="clock-card">
-        <h3>Saat</h3>
-        <div id="berlinClock" class="clock-time">{{ now_time }}</div>
-        <div class="clock-zone">Europe/Berlin (Frankfurt)</div>
-    </div>
-</section>
+{% if message %}
+<div class="alert {% if 'hata' in message.lower() or 'bulunamadı' in message.lower() %}error{% else %}success{% endif %}">{{ message }}</div>
+{% endif %}
 
-<section class="quick-grid">
-    <article class="card quick-card"><div class="quick-icon">📊</div><h3>Admin-Time</h3><p>Çalışanlar, mesailer ve durum tabloları.</p><a class="btn btn-primary small" href="/admin-time">Git →</a></article>
-    <article class="card quick-card"><div class="quick-icon">📥</div><h3>Import</h3><p>Excel dosyalarını yükleyip kayıtları takip et.</p><a class="btn btn-primary small" href="/admin-time/import">Git →</a></article>
-    <article class="card quick-card"><div class="quick-icon">🚜</div><h3>Vehicles QR</h3><p>Araç QR oluştur, indir ve yazdır.</p><a class="btn btn-primary small" href="/admin-time/vehicles">Git →</a></article>
-    <article class="card quick-card"><div class="quick-icon">🖥️</div><h3>Kiosk Mode</h3><p>Saha ekranı için kiosk mod (placeholder).</p><a class="btn btn-secondary small" href="#">Git →</a></article>
-</section>
+<!-- KPI Cards -->
+<div class="kpi-grid animate-in">
+  <div class="kpi-card c-blue">
+    <div class="kpi-icon c-blue">👷</div>
+    <span>Bugün Çalışma</span>
+    <strong>{{ today_hours }}s</strong>
+  </div>
+  <div class="kpi-card c-green">
+    <div class="kpi-icon c-green">📅</div>
+    <span>Bu Hafta</span>
+    <strong>{{ week_hours }}s</strong>
+  </div>
+  <div class="kpi-card c-purple">
+    <div class="kpi-icon c-purple">📊</div>
+    <span>Bu Ay</span>
+    <strong>{{ month_hours }}s</strong>
+  </div>
+  <div class="kpi-card c-amber">
+    <div class="kpi-icon c-amber">⚡</div>
+    <span>Aktif Mesai</span>
+    <strong>{{ active_shift_count }}</strong>
+  </div>
+  <div class="kpi-card c-red">
+    <div class="kpi-icon c-red">💶</div>
+    <span>Bugün Maliyet</span>
+    <strong>{{ today_cost_eur }}</strong>
+  </div>
+  <div class="kpi-card c-green">
+    <div class="kpi-icon c-green">📈</div>
+    <span>Hafta Maliyet</span>
+    <strong>{{ week_cost_eur }}</strong>
+  </div>
+  <div class="kpi-card c-blue">
+    <div class="kpi-icon c-blue">💰</div>
+    <span>Ay Maliyet</span>
+    <strong>{{ month_cost_eur }}</strong>
+  </div>
+  <div class="kpi-card c-red">
+    <div class="kpi-icon c-red">🔥</div>
+    <span>Ay Fazla Mesai</span>
+    <strong>{{ month_overtime_cost_eur }}</strong>
+  </div>
+</div>
 
-<section class="card hero">
-    <div>
-        <h3>Sistem Hakkında</h3>
-        <p>Demo altyapısı FastAPI + SQLite ile çalışır. Tüm zaman gösterimi Europe/Berlin zaman dilimindedir.</p>
+{% if missing_rate_employees %}
+<div class="alert warning">⚠️ Saat ücreti tanımlanmamış çalışanlar: <strong>{{ missing_rate_employees | join(", ") }}</strong></div>
+{% endif %}
+
+<!-- Active Shifts -->
+{% if active_entries %}
+<div class="card">
+  <div class="section-head">
+    <div class="flex gap-8" style="align-items:center">
+      <h2>Aktif Mesailer</h2>
+      <span class="live-badge"><span class="live-dot"></span>CANLI</span>
     </div>
-    <div class="placeholder-visual">🚧 Excavator + QR</div>
-</section>
+    <span class="badge badge-green">{{ active_entries|length }} aktif</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Çalışan</th><th>Araç / Makine</th><th>Başlangıç</th><th>Süre</th><th>Durum</th>
+      </tr></thead>
+      <tbody>
+      {% for e in active_entries %}
+        <tr>
+          <td><strong>{{ e.employee_name }}</strong></td>
+          <td>{{ e.vehicle_id }}</td>
+          <td>{{ e.start_time.strftime("%d.%m.%Y %H:%M") if e.start_time else "-" }}</td>
+          <td>
+            {% if e.start_time %}
+              {% set mins = ((now_berlin_ts - e.start_time.timestamp()) / 60)|int %}
+              {% set h = (mins // 60) %}
+              {% set m = (mins % 60) %}
+              {{ h }}s {{ m }}dk
+            {% else %}-{% endif %}
+          </td>
+          <td><span class="badge badge-green"><span class="status-dot dot-green"></span> Aktif</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
-<script>
-const clockEl = document.getElementById("berlinClock");
-if (clockEl) {
-  const updateClock = () => {
-    const now = new Date();
-    clockEl.textContent = new Intl.DateTimeFormat("tr-TR", {
-      timeZone: "Europe/Berlin",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    }).format(now);
-  };
-  updateClock();
-  setInterval(updateClock, 1000);
-}
-</script>
+<!-- Quick Links -->
+<div class="card">
+  <div class="section-head"><h2>Hızlı Erişim</h2></div>
+  <div style="padding:16px 20px;display:flex;gap:10px;flex-wrap:wrap">
+    <a href="/admin-time" class="btn btn-primary">👷 Workforce Yönetimi</a>
+    <a href="/admin-time/vehicles" class="btn btn-secondary">🚛 Asset / QR Yönetimi</a>
+    <a href="/admin-time/reports" class="btn btn-secondary">📊 Raporlar</a>
+    <a href="/admin-time/export" class="btn btn-secondary">⬇️ Excel Export</a>
+    <a href="/admin-time/import" class="btn btn-secondary">⬆️ Excel Import</a>
+  </div>
+</div>
+
+<!-- Recent Completed -->
+{% if completed_entries %}
+<div class="card">
+  <div class="section-head"><h2>Son Tamamlanan Mesailer</h2><a href="/admin-time/reports" class="btn btn-ghost small">Tümü →</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Çalışan</th><th>Başlangıç</th><th>Bitiş</th><th>Toplam Saat</th><th>Fazla Mesai</th><th>Maliyet</th></tr></thead>
+      <tbody>
+      {% for e in completed_entries[:10] %}
+        <tr>
+          <td><strong>{{ e.employee_name }}</strong></td>
+          <td>{{ e.start_time.strftime("%d.%m %H:%M") if e.start_time else "-" }}</td>
+          <td>{{ e.end_time.strftime("%d.%m %H:%M") if e.end_time else "-" }}</td>
+          <td>{{ "%.1f"|format((e.total_minutes or 0) / 60) }}s</td>
+          <td>
+            {% if (e.overtime_minutes or 0) > 0 %}
+              <span class="badge badge-amber">{{ "%.0f"|format((e.overtime_minutes or 0) / 60) }}s fazla</span>
+            {% else %}-{% endif %}
+          </td>
+          <td class="text-green fw-700">{{ "€%.2f"|format(e.total_cost or 0) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

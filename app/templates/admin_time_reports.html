@@ -1,106 +1,162 @@
 {% extends "base.html" %}
+{% block page_title %}Reports{% endblock %}
+{% block page_subtitle %}Maliyet & Saat Analizi{% endblock %}
+
 {% block content %}
-<section class="card">
-    <h2>Admin-Time Raporlar</h2>
-    <p class="muted">Europe/Berlin (Frankfurt)</p>
-    <form class="filters" method="get" action="/admin-time/reports">
-        <div><label>Tarih Başlangıç</label><input type="date" name="date_from" value="{{ filters.date_from }}"></div>
-        <div><label>Tarih Bitiş</label><input type="date" name="date_to" value="{{ filters.date_to }}"></div>
-        <div>
-            <label>Çalışan</label>
-            <select name="employee_id"><option value="">Tümü</option>
-            {% for e in employees %}
-                <option value="{{ e.id }}" {% if filters.employee_id|string == e.id|string %}selected{% endif %}>{{ e.name }}</option>
-            {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label>Araç</label>
-            <select name="vehicle_id"><option value="">Tümü</option>
-            {% for v in vehicles %}
-                <option value="{{ v.id }}" {% if filters.vehicle_id|string == v.id|string %}selected{% endif %}>{{ v.name }}</option>
-            {% endfor %}
-            </select>
-        </div>
-        <div><label>Ay (YYYY-MM)</label><input type="month" name="month" value="{{ filters.month }}"></div>
-        <div class="filter-actions">
-            <button class="btn btn-primary small" type="submit">Raporla</button>
-            <a class="btn btn-secondary small" href="/admin-time/reports">Temizle</a>
-        </div>
+<div class="card" style="overflow:visible">
+  <form class="filters" method="get" action="/admin-time/reports">
+    <div><label>Tarih Başlangıç</label><input type="date" name="date_from" value="{{ filters.date_from }}" style="min-width:140px"></div>
+    <div><label>Tarih Bitiş</label><input type="date" name="date_to" value="{{ filters.date_to }}" style="min-width:140px"></div>
+    <div>
+      <label>Çalışan</label>
+      <select name="employee_id" style="min-width:140px">
+        <option value="">Tümü</option>
+        {% for e in employees %}<option value="{{ e.id }}" {% if filters.employee_id|string == e.id|string %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Araç</label>
+      <select name="vehicle_id" style="min-width:140px">
+        <option value="">Tümü</option>
+        {% for v in vehicles %}<option value="{{ v.id }}" {% if filters.vehicle_id|string == v.id|string %}selected{% endif %}>{{ v.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Ay (ay filtresi)</label>
+      <input type="month" name="month" value="{{ filters.month }}" style="min-width:140px">
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-primary small" type="submit">Filtrele</button>
+      <a class="btn btn-secondary small" href="/admin-time/reports">Temizle</a>
+    </div>
+  </form>
+  <div class="export-links">
+    <span style="font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Export:</span>
+    <a href="/admin-time/export" class="btn btn-secondary small">⬇️ Tüm Veri Excel</a>
+    <form method="get" action="/admin-time/reports/export" class="inline-actions">
+      <input type="month" name="month" value="{{ filters.month }}" required style="min-width:130px">
+      <button class="btn btn-accent small" type="submit">📅 Aylık Excel</button>
     </form>
-    <form class="inline-actions" method="get" action="/admin-time/reports/export">
-        <input type="month" name="month" value="{{ filters.month }}" required>
-        <button class="btn btn-primary small" type="submit">Aylık Toplu Excel Export</button>
-    </form>
-</section>
+  </div>
+</div>
 
-<section class="card">
-    <h3>Toplu Çalışan Raporu</h3>
+<!-- Employee Cost Summary -->
+<div class="card">
+  <div class="section-head">
+    <h2>👷 Çalışan Bazlı Maliyet Özeti</h2>
+    <span class="badge badge-blue">{{ employee_rows|length }} çalışan</span>
+  </div>
+  {% if employee_rows %}
+  <div class="table-wrap">
     <table>
-        <thead><tr><th>Çalışan</th><th>Telefon</th><th>Çalışılan gün</th><th>Normal çalışma saati</th><th>Fazla mesai saati</th><th>Toplam çalışma saati</th><th>Normal saat ücreti</th><th>Fazla mesai saat ücreti</th><th>Normal ücret toplamı</th><th>Fazla mesai ücret toplamı</th><th>Genel toplam ödeme</th></tr></thead>
-        <tbody>
-        {% for r in employee_rows %}
-            <tr>
-                <td>{{ r.employee_name }}</td>
-                <td>{{ r.phone }}</td>
-                <td>{{ r.worked_days }}</td>
-                <td>{{ r.regular_hours }}</td>
-                <td>{{ r.overtime_hours }}</td>
-                <td>{{ r.total_hours }}</td>
-                <td>{{ r.hourly_rate_eur }}</td>
-                <td>{{ r.overtime_hourly_rate_eur }}</td>
-                <td>{{ r.regular_cost_eur }}</td>
-                <td>{{ r.overtime_cost_eur }}</td>
-                <td>{{ r.total_cost_eur }}</td>
-            </tr>
-            {% if r.missing_rate %}
-            <tr><td colspan="11" class="muted">Ucret tanimlanmamis</td></tr>
-            {% endif %}
-        {% else %}
-            <tr><td colspan="11">Veri yok.</td></tr>
-        {% endfor %}
-        </tbody>
+      <thead><tr>
+        <th>Çalışan</th><th>Telefon</th><th>Çalışılan Gün</th>
+        <th>Normal Saat</th><th>Fazla Mesai</th><th>Toplam Saat</th>
+        <th>Normal €/s</th><th>FM €/s</th>
+        <th>Normal Maliyet</th><th>Fazla Mesai Maliyeti</th><th>Toplam Maliyet</th>
+      </tr></thead>
+      <tbody>
+      {% for r in employee_rows %}
+      <tr>
+        <td><strong>{{ r.employee_name }}</strong></td>
+        <td class="font-mono muted">{{ r.phone }}</td>
+        <td>{{ r.worked_days }}g</td>
+        <td>{{ r.regular_hours }}s</td>
+        <td>
+          {% if r.overtime_hours != "0.00" %}
+          <span class="badge badge-amber">{{ r.overtime_hours }}s</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="fw-700">{{ r.total_hours }}s</td>
+        <td class="muted">{{ r.hourly_rate_eur }}</td>
+        <td class="muted">{{ r.overtime_hourly_rate_eur }}</td>
+        <td>{{ r.regular_cost_eur }}</td>
+        <td>
+          {% if r.overtime_cost_eur != "€0.00" %}
+          <span class="text-amber fw-700">{{ r.overtime_cost_eur }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="text-green fw-700 fw-800">{{ r.total_cost_eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
     </table>
-</section>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-state-icon">📋</div><h3>Kayıt yok</h3><p>Seçili kriterlere göre veri bulunamadı.</p></div>
+  {% endif %}
+</div>
 
-<section class="card">
-    <h3>Araç / İş Makinesi Bazlı Rapor</h3>
+<!-- Vehicle Cost Summary -->
+<div class="card">
+  <div class="section-head">
+    <h2>🚛 Araç Bazlı Kullanım Özeti</h2>
+    <span class="badge badge-blue">{{ vehicle_rows|length }} araç</span>
+  </div>
+  {% if vehicle_rows %}
+  <div class="table-wrap">
     <table>
-        <thead><tr><th>Araç</th><th>Araç tipi</th><th>Toplam Saat</th><th>Çalışan Sayısı</th><th>Toplam İşçilik Maliyeti</th></tr></thead>
-        <tbody>
-        {% for r in vehicle_rows %}
-            <tr><td>{{ r.vehicle_name }}</td><td>{{ r.vehicle_type }}</td><td>{{ r.total_hours }}</td><td>{{ r.employee_count }}</td><td>{{ r.total_cost_eur }}</td></tr>
-        {% else %}
-            <tr><td colspan="5">Veri yok.</td></tr>
-        {% endfor %}
-        </tbody>
+      <thead><tr><th>Araç</th><th>Tip</th><th>Toplam Saat</th><th>Çalışan Sayısı</th><th>Toplam İşçilik Maliyeti</th></tr></thead>
+      <tbody>
+      {% for r in vehicle_rows %}
+      <tr>
+        <td><strong>{{ r.vehicle_name }}</strong></td>
+        <td><span class="badge badge-gray">{{ r.vehicle_type }}</span></td>
+        <td class="fw-700">{{ r.total_hours }}s</td>
+        <td>{{ r.employee_count }} çalışan</td>
+        <td class="text-green fw-700">{{ r.total_cost_eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
     </table>
-</section>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-state-icon">🚛</div><h3>Veri yok</h3></div>
+  {% endif %}
+</div>
 
-<section class="card">
-    <h3>Günlük Rapor</h3>
+<!-- Daily Log Detail -->
+<div class="card">
+  <div class="section-head">
+    <h2>📅 Günlük Mesai Detayı</h2>
+    <span class="badge badge-blue">{{ daily_rows|length }} kayıt</span>
+  </div>
+  {% if daily_rows %}
+  <div class="table-wrap">
     <table>
-        <thead><tr><th>Tarih</th><th>Çalışan</th><th>Telefon</th><th>Araç</th><th>Başlangıç</th><th>Bitiş</th><th>Normal Saat</th><th>Fazla Mesai</th><th>Toplam Saat</th><th>Normal Ücret</th><th>Fazla Mesai Ücreti</th><th>Toplam Ödeme</th></tr></thead>
-        <tbody>
-        {% for r in daily_rows %}
-            <tr>
-                <td>{{ r.date }}</td>
-                <td>{{ r.employee_name }}</td>
-                <td>{{ r.phone }}</td>
-                <td>{{ r.vehicle_name }}</td>
-                <td>{{ r.start_time }}</td>
-                <td>{{ r.end_time }}</td>
-                <td>{{ r.regular_hours }}</td>
-                <td>{{ r.overtime_hours }}</td>
-                <td>{{ r.total_hours }}</td>
-                <td>{{ r.regular_cost_eur }}</td>
-                <td>{{ r.overtime_cost_eur }}</td>
-                <td>{{ r.total_cost_eur }}</td>
-            </tr>
-        {% else %}
-            <tr><td colspan="12">Veri yok.</td></tr>
-        {% endfor %}
-        </tbody>
+      <thead><tr>
+        <th>Tarih</th><th>Çalışan</th><th>Araç</th>
+        <th>Giriş</th><th>Çıkış</th>
+        <th>Normal</th><th>Fazla Mesai</th><th>Toplam</th>
+        <th>Normal Maliyet</th><th>FM Maliyet</th><th>Toplam</th>
+      </tr></thead>
+      <tbody>
+      {% for r in daily_rows %}
+      <tr>
+        <td class="font-mono">{{ r.date }}</td>
+        <td><strong>{{ r.employee_name }}</strong></td>
+        <td>{{ r.vehicle_name }}</td>
+        <td class="font-mono">{{ r.start_time }}</td>
+        <td class="font-mono">{{ r.end_time }}</td>
+        <td>{{ r.regular_hours }}s</td>
+        <td>
+          {% if r.overtime_hours != "0.00" %}<span class="badge badge-amber">{{ r.overtime_hours }}s</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="fw-700">{{ r.total_hours }}s</td>
+        <td>{{ r.regular_cost_eur }}</td>
+        <td>
+          {% if r.overtime_cost_eur != "€0.00" %}<span class="text-amber">{{ r.overtime_cost_eur }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td class="text-green fw-700">{{ r.total_cost_eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
     </table>
-</section>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-state-icon">📋</div><h3>Kayıt yok</h3><p>Seçili filtrelere göre günlük kayıt bulunamadı.</p></div>
+  {% endif %}
+</div>
 {% endblock %}
