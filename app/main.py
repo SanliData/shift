@@ -10,14 +10,14 @@ from sqlalchemy import func, select, text
 from .config import APP_NAME, TIMEZONE
 from .database import Base, SessionLocal, engine
 from .models import Employee, TimeEntry, Vehicle
-from .routes import admin_time, time
+from .routes import admin_time, time_routes
 
 app = FastAPI(title=APP_NAME, version="2.0.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 BERLIN_TZ = ZoneInfo(TIMEZONE)
 
-app.include_router(time.router)
+app.include_router(time_routes.router)
 app.include_router(admin_time.router)
 
 
