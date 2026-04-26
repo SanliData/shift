@@ -4,7 +4,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -21,6 +21,7 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     phone_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    date_of_birth: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hourly_rate: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     overtime_multiplier: Mapped[float] = mapped_column(Float, default=1.5, nullable=False)
     overtime_hourly_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -89,6 +90,27 @@ class TimeEntry(Base):
     overtime_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+
+
+class TimeEntryCorrection(Base):
+    __tablename__ = "time_entry_corrections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    time_entry_id: Mapped[int] = mapped_column(ForeignKey("time_entries.id"), nullable=False, index=True)
+    old_clock_in: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    old_clock_out: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    new_clock_in: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    new_clock_out: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    old_employee_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_employee_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    old_vehicle_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_vehicle_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    corrected_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    corrected_by_role: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    corrected_by_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    corrected_by_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RegistrationToken(Base):

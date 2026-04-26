@@ -9,10 +9,10 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import qrcode
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, func, select, text, update
+from sqlalchemy import desc, func, or_, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import BASE_URL, COOKIE_SECURE, REGISTRATION_SIGNING_SECRET, TIMEZONE
@@ -24,10 +24,11 @@ from ..models import (
     ProvisionalWorker,
     RegistrationToken,
     TimeEntry,
+    TimeEntryCorrection,
     Vehicle,
 )
 from ..models import PW_STATUS_ACTIVE, PW_STATUS_DEACTIVATED, PW_STATUS_PENDING
-from ..sqlite_migrations import ensure_provisional_schema
+from ..sqlite_migrations import ensure_provisional_schema, ensure_reporting_schema
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -50,6 +51,62 @@ def parse_date(date_str: str | None):
         return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
     except ValueError:
         return None
+
+
+def parse_datetime_local(raw: str | None) -> datetime | None:
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        s16 = s[:16].replace(" ", "T")
+        dt = datetime.strptime(s16, "%Y-%m-%dT%H:%M")
+        return dt.replace(tzinfo=BERLIN_TZ)
+    except ValueError:
+        return None
+
+
+def fmt_datetime_local(dt: datetime | None) -> str:
+    if not dt:
+        return ""
+    return as_berlin(dt).strftime("%Y-%m-%dT%H:%M")
+
+
+def parse_optional_float_hours(raw: str | None) -> float | None:
+    s = (raw or "").strip().replace(",", ".")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def recalc_minutes_and_costs(
+    employee: Employee,
+    *,
+    start: datetime | None,
+    end: datetime | None,
+    normal_hours_override: float | None,
+    overtime_hours_override: float | None,
+) -> tuple[int, int, int, float, float, float]:
+    """total_minutes, regular_minutes, overtime_minutes, regular_cost, overtime_cost, total_cost."""
+    if normal_hours_override is not None and overtime_hours_override is not None:
+        reg_m = max(0, int(round(normal_hours_override * 60)))
+        ot_m = max(0, int(round(overtime_hours_override * 60)))
+    elif start and end:
+        delta = max(0, int((as_berlin(end) - as_berlin(start)).total_seconds() // 60))
+        reg_m = min(delta, 480)
+        ot_m = max(0, delta - 480)
+    else:
+        reg_m = 0
+        ot_m = 0
+    total_m = reg_m + ot_m
+    hr = float(employee.hourly_rate or 0)
+    otr = employee_overtime_rate(employee)
+    reg_c = round((reg_m / 60.0) * hr, 2)
+    ot_c = round((ot_m / 60.0) * otr, 2)
+    tot_c = round(reg_c + ot_c, 2)
+    return total_m, reg_m, ot_m, reg_c, ot_c, tot_c
 
 
 def build_filters(date_from: str | None, date_to: str | None, employee_id: int | None, vehicle_id: int | None):
@@ -84,6 +141,85 @@ def eur(value: float | int | None) -> str:
 
 def hours_str(minutes: int | float | None) -> str:
     return f"{(float(minutes or 0) / 60):.2f}"
+
+
+def correction_request_audit(request: Request) -> tuple[str, str, str | None, str | None]:
+    """Placeholder identity until admin auth exists; store request fingerprint."""
+    client_ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    if ua and len(ua) > 4000:
+        ua = ua[:4000]
+    return "admin", "admin", client_ip, ua
+
+
+def time_entry_original_snapshot(
+    entry: TimeEntry, employees: list[Employee], vehicles: list[Vehicle]
+) -> dict[str, str]:
+    emp_map = {e.id: e for e in employees}
+    v_map = {v.id: v for v in vehicles}
+    emp = emp_map.get(entry.employee_id) if entry.employee_id is not None else None
+    v = v_map.get(entry.vehicle_id)
+    return {
+        "employee_label": emp.name if emp else entry.employee_name,
+        "vehicle_label": v.name if v else f"Araç #{entry.vehicle_id}",
+        "clock_in": as_berlin(entry.start_time).strftime("%d.%m.%Y %H:%M") if entry.start_time else "—",
+        "clock_out": as_berlin(entry.end_time).strftime("%d.%m.%Y %H:%M") if entry.end_time else "—",
+        "regular_hours": hours_str(entry.regular_minutes),
+        "overtime_hours": hours_str(entry.overtime_minutes),
+        "total_cost_eur": eur(entry.total_cost),
+    }
+
+
+def _time_entry_edit_page_context(
+    request: Request,
+    entry: TimeEntry,
+    employees: list[Employee],
+    vehicles: list[Vehicle],
+    corrections: list[TimeEntryCorrection],
+    *,
+    clock_in_value: str,
+    clock_out_value: str,
+    normal_hours_value: str,
+    overtime_hours_value: str,
+    reason_value: str,
+    form_error: str | None,
+) -> dict[str, object]:
+    return {
+        "request": request,
+        "berlin_now": now_berlin().strftime("%d.%m.%Y %H:%M:%S"),
+        "entry": entry,
+        "employees": employees,
+        "vehicles": vehicles,
+        "corrections": corrections,
+        "original": time_entry_original_snapshot(entry, employees, vehicles),
+        "clock_in_value": clock_in_value,
+        "clock_out_value": clock_out_value,
+        "normal_hours_value": normal_hours_value,
+        "overtime_hours_value": overtime_hours_value,
+        "reason_value": reason_value,
+        "form_error": form_error,
+    }
+
+
+def _correction_row_display(c: TimeEntryCorrection) -> dict[str, object]:
+    ua = (c.corrected_by_user_agent or "").replace("\n", " ").strip()
+    if len(ua) > 140:
+        ua = ua[:137] + "…"
+    return {
+        "created": as_berlin(c.created_at).strftime("%d.%m.%Y %H:%M"),
+        "entry_id": c.time_entry_id,
+        "by": c.corrected_by or "admin",
+        "role": c.corrected_by_role or "admin",
+        "ip": c.corrected_by_ip or "—",
+        "ua": ua or "—",
+        "reason": (c.reason or "").strip() or "—",
+        "old_in": c.old_clock_in.strftime("%d.%m.%Y %H:%M") if c.old_clock_in else "—",
+        "new_in": c.new_clock_in.strftime("%d.%m.%Y %H:%M") if c.new_clock_in else "—",
+        "old_out": c.old_clock_out.strftime("%d.%m.%Y %H:%M") if c.old_clock_out else "—",
+        "new_out": c.new_clock_out.strftime("%d.%m.%Y %H:%M") if c.new_clock_out else "—",
+        "emp_ids": f"{c.old_employee_id} → {c.new_employee_id}",
+        "veh_ids": f"{c.old_vehicle_id} → {c.new_vehicle_id}",
+    }
 
 
 def employee_overtime_rate(employee: Employee | None) -> float:
@@ -278,6 +414,7 @@ def render_admin_time(
 ):
     ensure_registration_token_columns(db)
     ensure_provisional_schema(db)
+    ensure_reporting_schema(db)
     employees = db.scalars(select(Employee).order_by(Employee.name)).all()
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.qr_code_slug)).all()
     devices = db.scalars(
@@ -990,6 +1127,7 @@ def admin_time_reports(
     month: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
+    ensure_reporting_schema(db)
     employees = db.scalars(select(Employee).order_by(Employee.name)).all()
     vehicles = db.scalars(select(Vehicle).order_by(Vehicle.name)).all()
     employee_map = {e.id: e for e in employees}
@@ -1013,7 +1151,7 @@ def admin_time_reports(
     vehicle_report: dict[int, dict[str, object]] = {}
     daily_rows: list[dict] = []
     for e in entries:
-        emp = employee_map.get(e.employee_id)
+        emp = employee_map.get(e.employee_id) if e.employee_id is not None else None
         hourly_rate = float(emp.hourly_rate or 0) if emp else 0.0
         overtime_rate = employee_overtime_rate(emp)
         regular_minutes = int(e.regular_minutes or 0)
@@ -1023,29 +1161,30 @@ def admin_time_reports(
         overtime_cost = float(e.overtime_cost or 0)
         total_cost = float(e.total_cost or 0)
 
-        if e.employee_id not in employee_report:
-            employee_report[e.employee_id] = {
-                "employee_name": e.employee_name,
-                "phone": (emp.phone_number if emp else None) or "-",
-                "days": set(),
-                "regular_minutes": 0,
-                "overtime_minutes": 0,
-                "total_minutes": 0,
-                "hourly_rate": hourly_rate,
-                "overtime_hourly_rate": overtime_rate,
-                "regular_cost": 0.0,
-                "overtime_cost": 0.0,
-                "total_cost": 0.0,
-                "missing_rate": hourly_rate <= 0,
-            }
-        r = employee_report[e.employee_id]
-        r["days"].add(as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-")
-        r["regular_minutes"] += regular_minutes
-        r["overtime_minutes"] += overtime_minutes
-        r["total_minutes"] += total_minutes
-        r["regular_cost"] += regular_cost
-        r["overtime_cost"] += overtime_cost
-        r["total_cost"] += total_cost
+        if e.employee_id is not None:
+            if e.employee_id not in employee_report:
+                employee_report[e.employee_id] = {
+                    "employee_name": e.employee_name,
+                    "phone": (emp.phone_number if emp else None) or "-",
+                    "days": set(),
+                    "regular_minutes": 0,
+                    "overtime_minutes": 0,
+                    "total_minutes": 0,
+                    "hourly_rate": hourly_rate,
+                    "overtime_hourly_rate": overtime_rate,
+                    "regular_cost": 0.0,
+                    "overtime_cost": 0.0,
+                    "total_cost": 0.0,
+                    "missing_rate": hourly_rate <= 0,
+                }
+            r = employee_report[e.employee_id]
+            r["days"].add(as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-")
+            r["regular_minutes"] += regular_minutes
+            r["overtime_minutes"] += overtime_minutes
+            r["total_minutes"] += total_minutes
+            r["regular_cost"] += regular_cost
+            r["overtime_cost"] += overtime_cost
+            r["total_cost"] += total_cost
 
         if e.vehicle_id not in vehicle_report:
             vehicle_report[e.vehicle_id] = {
@@ -1057,11 +1196,15 @@ def admin_time_reports(
             }
         vr = vehicle_report[e.vehicle_id]
         vr["total_hours"] += float(total_minutes) / 60
-        vr["employee_ids"].add(e.employee_id)
+        if e.employee_id is not None:
+            vr["employee_ids"].add(e.employee_id)
         vr["total_cost"] += total_cost
 
         daily_rows.append(
             {
+                "entry_id": e.id,
+                "employee_id": e.employee_id,
+                "vehicle_id": e.vehicle_id,
                 "date": as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-",
                 "employee_name": e.employee_name,
                 "phone": (emp.phone_number if emp else None) or "-",
@@ -1077,9 +1220,11 @@ def admin_time_reports(
             }
         )
     vehicle_rows = []
-    for row in sorted(vehicle_report.values(), key=lambda x: str(x["vehicle_name"])):
+    for vid in sorted(vehicle_report.keys(), key=lambda i: str(vehicle_report[i]["vehicle_name"])):
+        row = vehicle_report[vid]
         vehicle_rows.append(
             {
+                "vehicle_id": vid,
                 "vehicle_name": row["vehicle_name"],
                 "vehicle_type": row["vehicle_type"],
                 "total_hours": round(row["total_hours"], 2),
@@ -1088,9 +1233,11 @@ def admin_time_reports(
             }
         )
     employee_rows = []
-    for row in sorted(employee_report.values(), key=lambda x: str(x["employee_name"])):
+    for eid in sorted(employee_report.keys(), key=lambda i: str(employee_report[i]["employee_name"])):
+        row = employee_report[eid]
         employee_rows.append(
             {
+                "employee_id": eid,
                 "employee_name": row["employee_name"],
                 "phone": row["phone"],
                 "worked_days": len(row["days"]),
@@ -1110,6 +1257,7 @@ def admin_time_reports(
         name="admin_time_reports.html",
         context={
             "request": request,
+            "berlin_now": now_berlin().strftime("%d.%m.%Y %H:%M:%S"),
             "employees": employees,
             "vehicles": vehicles,
             "employee_rows": employee_rows,
@@ -1124,6 +1272,362 @@ def admin_time_reports(
             },
         },
     )
+
+
+@router.get("/admin-time/dashboard")
+def admin_time_dashboard_redirect():
+    return RedirectResponse("/admin-time/reports", status_code=302)
+
+
+@router.get("/admin-time/employees/{employee_id}/profile", response_class=HTMLResponse)
+def admin_employee_profile(request: Request, employee_id: int, db: Session = Depends(get_db)):
+    ensure_reporting_schema(db)
+    employee = db.get(Employee, employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    entries = db.scalars(
+        select(TimeEntry)
+        .where(TimeEntry.employee_id == employee_id, TimeEntry.status == "completed")
+        .order_by(desc(TimeEntry.start_time))
+    ).all()
+    vehicle_map = {v.id: v for v in db.scalars(select(Vehicle)).all()}
+    day_set: set[str] = set()
+    total_reg_m = 0
+    total_ot_m = 0
+    total_cost = 0.0
+    history: list[dict[str, object]] = []
+    for e in entries:
+        if e.start_time:
+            day_set.add(as_berlin(e.start_time).strftime("%Y-%m-%d"))
+        reg_m = int(e.regular_minutes or 0)
+        ot_m = int(e.overtime_minutes or 0)
+        tot_m = int(e.total_minutes or 0)
+        total_reg_m += reg_m
+        total_ot_m += ot_m
+        total_cost += float(e.total_cost or 0)
+        vname = vehicle_map[e.vehicle_id].name if e.vehicle_id in vehicle_map else f"ID {e.vehicle_id}"
+        history.append(
+            {
+                "entry_id": e.id,
+                "date": as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-",
+                "vehicle_name": vname,
+                "start_time": as_berlin(e.start_time).strftime("%d.%m.%Y %H:%M") if e.start_time else "-",
+                "end_time": as_berlin(e.end_time).strftime("%d.%m.%Y %H:%M") if e.end_time else "-",
+                "regular_hours": f"{(reg_m / 60):.2f}",
+                "overtime_hours": f"{(ot_m / 60):.2f}",
+                "total_hours": f"{(tot_m / 60):.2f}",
+                "total_cost_eur": eur(e.total_cost),
+            }
+        )
+    corrections_log = db.scalars(
+        select(TimeEntryCorrection)
+        .where(
+            or_(
+                TimeEntryCorrection.old_employee_id == employee_id,
+                TimeEntryCorrection.new_employee_id == employee_id,
+            )
+        )
+        .order_by(desc(TimeEntryCorrection.created_at))
+        .limit(100)
+    ).all()
+    correction_rows = [_correction_row_display(c) for c in corrections_log]
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_time_employee_profile.html",
+        context={
+            "request": request,
+            "berlin_now": now_berlin().strftime("%d.%m.%Y %H:%M:%S"),
+            "employee": employee,
+            "worked_days": len(day_set),
+            "total_normal_hours": f"{(total_reg_m / 60):.2f}",
+            "total_overtime_hours": f"{(total_ot_m / 60):.2f}",
+            "total_cost_eur": eur(total_cost),
+            "hourly_normal_eur": eur(employee.hourly_rate),
+            "overtime_rate_eur": eur(employee_overtime_rate(employee)),
+            "history": history,
+            "correction_rows": correction_rows,
+        },
+    )
+
+
+@router.get("/admin-time/vehicles/{vehicle_id}/profile", response_class=HTMLResponse)
+def admin_vehicle_profile(request: Request, vehicle_id: int, db: Session = Depends(get_db)):
+    ensure_reporting_schema(db)
+    vehicle = db.get(Vehicle, vehicle_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    entries = db.scalars(
+        select(TimeEntry)
+        .where(TimeEntry.vehicle_id == vehicle_id, TimeEntry.status == "completed")
+        .order_by(desc(TimeEntry.start_time))
+    ).all()
+    total_minutes = sum(int(e.total_minutes or 0) for e in entries)
+    employee_names = sorted({e.employee_name for e in entries if e.employee_name})
+    history: list[dict[str, object]] = []
+    for e in entries:
+        reg_m = int(e.regular_minutes or 0)
+        ot_m = int(e.overtime_minutes or 0)
+        tot_m = int(e.total_minutes or 0)
+        history.append(
+            {
+                "entry_id": e.id,
+                "employee_name": e.employee_name,
+                "date": as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-",
+                "start_time": as_berlin(e.start_time).strftime("%d.%m.%Y %H:%M") if e.start_time else "-",
+                "end_time": as_berlin(e.end_time).strftime("%d.%m.%Y %H:%M") if e.end_time else "-",
+                "regular_hours": f"{(reg_m / 60):.2f}",
+                "overtime_hours": f"{(ot_m / 60):.2f}",
+                "total_hours": f"{(tot_m / 60):.2f}",
+                "total_cost_eur": eur(e.total_cost),
+            }
+        )
+    corrections_log = db.scalars(
+        select(TimeEntryCorrection)
+        .where(
+            or_(
+                TimeEntryCorrection.old_vehicle_id == vehicle_id,
+                TimeEntryCorrection.new_vehicle_id == vehicle_id,
+            )
+        )
+        .order_by(desc(TimeEntryCorrection.created_at))
+        .limit(100)
+    ).all()
+    correction_rows = [_correction_row_display(c) for c in corrections_log]
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_time_vehicle_profile.html",
+        context={
+            "request": request,
+            "berlin_now": now_berlin().strftime("%d.%m.%Y %H:%M:%S"),
+            "vehicle": vehicle,
+            "time_url": f"{BASE_TIME_URL}?vehicle={vehicle.qr_code_slug}",
+            "total_hours_used": round(total_minutes / 60.0, 2),
+            "employee_names": employee_names,
+            "history": history,
+            "correction_rows": correction_rows,
+        },
+    )
+
+
+@router.get("/admin-time/time-entries/{entry_id}/edit", response_class=HTMLResponse)
+def admin_time_entry_edit_get(request: Request, entry_id: int, db: Session = Depends(get_db)):
+    ensure_reporting_schema(db)
+    entry = db.get(TimeEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found")
+    employees = db.scalars(select(Employee).order_by(Employee.name)).all()
+    vehicles = db.scalars(select(Vehicle).order_by(Vehicle.name)).all()
+    corrections = db.scalars(
+        select(TimeEntryCorrection)
+        .where(TimeEntryCorrection.time_entry_id == entry_id)
+        .order_by(desc(TimeEntryCorrection.created_at))
+        .limit(50)
+    ).all()
+    error = None
+    if entry.status != "completed":
+        error = "Bu kayıt henüz tamamlanmadı; manuel düzeltme yalnızca tamamlanmış mesailer için kullanılabilir."
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_time_time_entry_edit.html",
+        context=_time_entry_edit_page_context(
+            request,
+            entry,
+            employees,
+            vehicles,
+            corrections,
+            clock_in_value=fmt_datetime_local(entry.start_time),
+            clock_out_value=fmt_datetime_local(entry.end_time),
+            normal_hours_value="",
+            overtime_hours_value="",
+            reason_value="",
+            form_error=error,
+        ),
+    )
+
+
+@router.post("/admin-time/time-entries/{entry_id}/edit", response_class=HTMLResponse)
+def admin_time_entry_edit_post(
+    request: Request,
+    entry_id: int,
+    employee_id: int = Form(),
+    vehicle_id: int = Form(),
+    clock_in: str = Form(""),
+    clock_out: str = Form(""),
+    normal_hours: str = Form(""),
+    overtime_hours: str = Form(""),
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    ensure_reporting_schema(db)
+    entry = db.get(TimeEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found")
+    if entry.status != "completed":
+        return admin_time_entry_edit_get(request, entry_id, db)  # type: ignore[misc]
+
+    employees = db.scalars(select(Employee).order_by(Employee.name)).all()
+    vehicles = db.scalars(select(Vehicle).order_by(Vehicle.name)).all()
+    corrections = db.scalars(
+        select(TimeEntryCorrection)
+        .where(TimeEntryCorrection.time_entry_id == entry_id)
+        .order_by(desc(TimeEntryCorrection.created_at))
+        .limit(50)
+    ).all()
+
+    reason_s = (reason or "").strip()
+    if not reason_s:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin_time_time_entry_edit.html",
+            context=_time_entry_edit_page_context(
+                request,
+                entry,
+                employees,
+                vehicles,
+                corrections,
+                clock_in_value=(clock_in or "").strip() or fmt_datetime_local(entry.start_time),
+                clock_out_value=(clock_out or "").strip() or fmt_datetime_local(entry.end_time),
+                normal_hours_value=(normal_hours or "").strip(),
+                overtime_hours_value=(overtime_hours or "").strip(),
+                reason_value=(reason or "").strip(),
+                form_error="Düzeltme nedeni zorunludur.",
+            ),
+        )
+
+    new_employee = db.get(Employee, employee_id)
+    new_vehicle = db.get(Vehicle, vehicle_id)
+    if not new_employee or not new_vehicle:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin_time_time_entry_edit.html",
+            context=_time_entry_edit_page_context(
+                request,
+                entry,
+                employees,
+                vehicles,
+                corrections,
+                clock_in_value=(clock_in or "").strip() or fmt_datetime_local(entry.start_time),
+                clock_out_value=(clock_out or "").strip() or fmt_datetime_local(entry.end_time),
+                normal_hours_value=(normal_hours or "").strip(),
+                overtime_hours_value=(overtime_hours or "").strip(),
+                reason_value=reason_s,
+                form_error="Geçerli çalışan ve araç seçin.",
+            ),
+        )
+
+    nh = parse_optional_float_hours(normal_hours)
+    oh = parse_optional_float_hours(overtime_hours)
+    parsed_in = parse_datetime_local(clock_in)
+    parsed_out = parse_datetime_local(clock_out)
+
+    old_start = entry.start_time
+    old_end = entry.end_time
+    old_emp_id = entry.employee_id
+    old_vehicle_id = entry.vehicle_id
+
+    form_error: str | None = None
+    new_start: datetime | None
+    new_end: datetime | None
+    total_m: int
+    reg_m: int
+    ot_m: int
+    reg_c: float
+    ot_c: float
+    tot_c: float
+
+    if nh is not None and oh is not None:
+        if nh < 0 or oh < 0:
+            form_error = "Saat değerleri negatif olamaz."
+        else:
+            new_start = parsed_in or entry.start_time
+            new_end = parsed_out or entry.end_time
+            total_m, reg_m, ot_m, reg_c, ot_c, tot_c = recalc_minutes_and_costs(
+                new_employee,
+                start=new_start,
+                end=new_end,
+                normal_hours_override=nh,
+                overtime_hours_override=oh,
+            )
+    elif parsed_in and parsed_out:
+        new_start, new_end = parsed_in, parsed_out
+        total_m, reg_m, ot_m, reg_c, ot_c, tot_c = recalc_minutes_and_costs(
+            new_employee,
+            start=new_start,
+            end=new_end,
+            normal_hours_override=None,
+            overtime_hours_override=None,
+        )
+    elif not (clock_in or "").strip() and not (clock_out or "").strip() and nh is None and oh is None:
+        new_start = entry.start_time
+        new_end = entry.end_time
+        reg_m = int(entry.regular_minutes or 0)
+        ot_m = int(entry.overtime_minutes or 0)
+        total_m = reg_m + ot_m
+        hr = float(new_employee.hourly_rate or 0)
+        otr = employee_overtime_rate(new_employee)
+        reg_c = round((reg_m / 60.0) * hr, 2)
+        ot_c = round((ot_m / 60.0) * otr, 2)
+        tot_c = round(reg_c + ot_c, 2)
+    elif nh is not None or oh is not None:
+        form_error = "Manuel saat için hem normal hem fazla mesai saatini girin (veya giriş/çıkış saatlerini kullanın)."
+    else:
+        form_error = "Giriş ve çıkış saatlerini birlikte girin veya saat alanlarını boş bırakıp yalnızca çalışan/araç değiştirin."
+
+    if form_error:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin_time_time_entry_edit.html",
+            context=_time_entry_edit_page_context(
+                request,
+                entry,
+                employees,
+                vehicles,
+                corrections,
+                clock_in_value=(clock_in or "").strip() or fmt_datetime_local(entry.start_time),
+                clock_out_value=(clock_out or "").strip() or fmt_datetime_local(entry.end_time),
+                normal_hours_value=(normal_hours or "").strip(),
+                overtime_hours_value=(overtime_hours or "").strip(),
+                reason_value=reason_s,
+                form_error=form_error,
+            ),
+        )
+
+    assert new_start is not None and new_end is not None
+
+    by, role, client_ip, ua = correction_request_audit(request)
+    correction = TimeEntryCorrection(
+        time_entry_id=entry.id,
+        old_clock_in=old_start,
+        old_clock_out=old_end,
+        new_clock_in=new_start,
+        new_clock_out=new_end,
+        old_employee_id=old_emp_id,
+        new_employee_id=new_employee.id,
+        old_vehicle_id=old_vehicle_id,
+        new_vehicle_id=new_vehicle.id,
+        reason=reason_s[:1000],
+        created_at=now_berlin(),
+        corrected_by=by,
+        corrected_by_role=role,
+        corrected_by_ip=client_ip,
+        corrected_by_user_agent=ua,
+    )
+    db.add(correction)
+    db.flush()
+    entry.employee_id = new_employee.id
+    entry.provisional_worker_id = None
+    entry.employee_name = new_employee.name
+    entry.vehicle_id = new_vehicle.id
+    entry.start_time = new_start
+    entry.end_time = new_end
+    entry.total_minutes = total_m
+    entry.regular_minutes = reg_m
+    entry.overtime_minutes = ot_m
+    entry.regular_cost = reg_c
+    entry.overtime_cost = ot_c
+    entry.total_cost = tot_c
+    db.commit()
+    return RedirectResponse("/admin-time/reports", status_code=302)
 
 
 @router.get("/admin-time/reports/export")
@@ -1157,36 +1661,37 @@ def admin_time_reports_export(month: str, db: Session = Depends(get_db)):
     total_overtime_payment = 0.0
 
     for e in entries:
-        emp = employee_map.get(e.employee_id)
+        emp = employee_map.get(e.employee_id) if e.employee_id is not None else None
         reg_min = int(e.regular_minutes or 0)
         ot_min = int(e.overtime_minutes or 0)
         total_min = int(e.total_minutes or 0)
         reg_cost = float(e.regular_cost or 0)
         ot_cost = float(e.overtime_cost or 0)
         tot_cost = float(e.total_cost or 0)
-        if e.employee_id not in employee_report:
-            employee_report[e.employee_id] = {
-                "name": e.employee_name,
-                "phone": (emp.phone_number if emp else None) or "-",
-                "days": set(),
-                "reg_min": 0,
-                "ot_min": 0,
-                "total_min": 0,
-                "hourly_rate": float(emp.hourly_rate or 0) if emp else 0.0,
-                "overtime_hourly_rate": employee_overtime_rate(emp),
-                "reg_cost": 0.0,
-                "ot_cost": 0.0,
-                "total_cost": 0.0,
-                "missing_rate": float(emp.hourly_rate or 0) <= 0 if emp else True,
-            }
-        r = employee_report[e.employee_id]
-        r["days"].add(as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-")
-        r["reg_min"] += reg_min
-        r["ot_min"] += ot_min
-        r["total_min"] += total_min
-        r["reg_cost"] += reg_cost
-        r["ot_cost"] += ot_cost
-        r["total_cost"] += tot_cost
+        if e.employee_id is not None:
+            if e.employee_id not in employee_report:
+                employee_report[e.employee_id] = {
+                    "name": e.employee_name,
+                    "phone": (emp.phone_number if emp else None) or "-",
+                    "days": set(),
+                    "reg_min": 0,
+                    "ot_min": 0,
+                    "total_min": 0,
+                    "hourly_rate": float(emp.hourly_rate or 0) if emp else 0.0,
+                    "overtime_hourly_rate": employee_overtime_rate(emp),
+                    "reg_cost": 0.0,
+                    "ot_cost": 0.0,
+                    "total_cost": 0.0,
+                    "missing_rate": float(emp.hourly_rate or 0) <= 0 if emp else True,
+                }
+            r = employee_report[e.employee_id]
+            r["days"].add(as_berlin(e.start_time).strftime("%Y-%m-%d") if e.start_time else "-")
+            r["reg_min"] += reg_min
+            r["ot_min"] += ot_min
+            r["total_min"] += total_min
+            r["reg_cost"] += reg_cost
+            r["ot_cost"] += ot_cost
+            r["total_cost"] += tot_cost
 
         if e.vehicle_id not in vehicle_report:
             vehicle_report[e.vehicle_id] = {
@@ -1198,7 +1703,8 @@ def admin_time_reports_export(month: str, db: Session = Depends(get_db)):
             }
         vr = vehicle_report[e.vehicle_id]
         vr["minutes"] += total_min
-        vr["employees"].add(e.employee_id)
+        if e.employee_id is not None:
+            vr["employees"].add(e.employee_id)
         vr["cost"] += tot_cost
 
         total_regular_minutes += reg_min

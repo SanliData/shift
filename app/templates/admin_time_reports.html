@@ -54,11 +54,12 @@
         <th>Normal Saat</th><th>Fazla Mesai</th><th>Toplam Saat</th>
         <th>Normal €/s</th><th>FM €/s</th>
         <th>Normal Maliyet</th><th>Fazla Mesai Maliyeti</th><th>Toplam Maliyet</th>
+        <th></th>
       </tr></thead>
       <tbody>
       {% for r in employee_rows %}
-      <tr>
-        <td><strong>{{ r.employee_name }}</strong></td>
+      <tr class="click-row" data-href="/admin-time/employees/{{ r.employee_id }}/profile">
+        <td><a href="/admin-time/employees/{{ r.employee_id }}/profile"><strong>{{ r.employee_name }}</strong></a></td>
         <td class="font-mono muted">{{ r.phone }}</td>
         <td>{{ r.worked_days }}g</td>
         <td>{{ r.regular_hours }}s</td>
@@ -77,6 +78,7 @@
           {% else %}—{% endif %}
         </td>
         <td class="text-green fw-700 fw-800">{{ r.total_cost_eur }}</td>
+        <td><a class="row-link-inline" href="/admin-time/employees/{{ r.employee_id }}/profile">Profil</a></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -96,15 +98,16 @@
   {% if vehicle_rows %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Araç</th><th>Tip</th><th>Toplam Saat</th><th>Çalışan Sayısı</th><th>Toplam İşçilik Maliyeti</th></tr></thead>
+      <thead><tr><th>Araç</th><th>Tip</th><th>Toplam Saat</th><th>Çalışan Sayısı</th><th>Toplam İşçilik Maliyeti</th><th></th></tr></thead>
       <tbody>
       {% for r in vehicle_rows %}
-      <tr>
-        <td><strong>{{ r.vehicle_name }}</strong></td>
+      <tr class="click-row" data-href="/admin-time/vehicles/{{ r.vehicle_id }}/profile">
+        <td><a href="/admin-time/vehicles/{{ r.vehicle_id }}/profile"><strong>{{ r.vehicle_name }}</strong></a></td>
         <td><span class="badge badge-gray">{{ r.vehicle_type }}</span></td>
         <td class="fw-700">{{ r.total_hours }}s</td>
         <td>{{ r.employee_count }} çalışan</td>
         <td class="text-green fw-700">{{ r.total_cost_eur }}</td>
+        <td><a class="row-link-inline" href="/admin-time/vehicles/{{ r.vehicle_id }}/profile">Profil</a></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -129,13 +132,20 @@
         <th>Giriş</th><th>Çıkış</th>
         <th>Normal</th><th>Fazla Mesai</th><th>Toplam</th>
         <th>Normal Maliyet</th><th>FM Maliyet</th><th>Toplam</th>
+        <th></th>
       </tr></thead>
       <tbody>
       {% for r in daily_rows %}
-      <tr>
+      <tr class="click-row" data-href="/admin-time/time-entries/{{ r.entry_id }}/edit">
         <td class="font-mono">{{ r.date }}</td>
-        <td><strong>{{ r.employee_name }}</strong></td>
-        <td>{{ r.vehicle_name }}</td>
+        <td>
+          {% if r.employee_id %}
+          <a href="/admin-time/employees/{{ r.employee_id }}/profile"><strong>{{ r.employee_name }}</strong></a>
+          {% else %}
+          <strong>{{ r.employee_name }}</strong>
+          {% endif %}
+        </td>
+        <td><a href="/admin-time/vehicles/{{ r.vehicle_id }}/profile">{{ r.vehicle_name }}</a></td>
         <td class="font-mono">{{ r.start_time }}</td>
         <td class="font-mono">{{ r.end_time }}</td>
         <td>{{ r.regular_hours }}s</td>
@@ -150,6 +160,7 @@
           {% else %}—{% endif %}
         </td>
         <td class="text-green fw-700">{{ r.total_cost_eur }}</td>
+        <td><a class="row-link-inline" href="/admin-time/time-entries/{{ r.entry_id }}/edit">Düzenle</a></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -159,4 +170,15 @@
   <div class="empty-state"><div class="empty-state-icon">📋</div><h3>Kayıt yok</h3><p>Seçili filtrelere göre günlük kayıt bulunamadı.</p></div>
   {% endif %}
 </div>
+
+<script>
+(function(){
+  document.querySelectorAll('tr.click-row[data-href]').forEach(function(tr){
+    tr.addEventListener('click', function(ev){
+      if (ev.target.closest('a')) return;
+      window.location.href = tr.getAttribute('data-href');
+    });
+  });
+})();
+</script>
 {% endblock %}

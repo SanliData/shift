@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block page_title %}Mesai düzeltmesi{% endblock %}
+{% block page_subtitle %}Kayıt #{{ entry.id }}{% endblock %}
+
+{% block content %}
+<div class="page-head" style="margin-bottom:12px">
+  <a class="btn btn-secondary small" href="/admin-time/reports">← Raporlara dön</a>
+</div>
+
+{% if form_error %}
+<div class="alert error">{{ form_error }}</div>
+{% endif %}
+
+<div class="alert warning">Bu işlem rapor ve ücret hesaplamalarını değiştirecektir.</div>
+
+<div class="card">
+  <div class="section-head"><h2>Kayıt bilgisi</h2><span class="badge badge-gray">{{ entry.status }}</span></div>
+  <div class="card-body small muted" style="padding-top:0">
+    Cihaz ID: {{ entry.device_id }} · Mevcut çalışan adı (denormalize): {{ entry.employee_name }}
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-head"><h2>Kayıtlı değerler (önce)</h2></div>
+  <div class="card-body" style="display:grid;gap:8px;font-size:13px;max-width:520px">
+    <div class="flex-between"><span class="muted">Çalışan</span><strong>{{ original.employee_label }}</strong></div>
+    <div class="flex-between"><span class="muted">Araç</span><strong>{{ original.vehicle_label }}</strong></div>
+    <div class="flex-between"><span class="muted">Giriş</span><span class="font-mono">{{ original.clock_in }}</span></div>
+    <div class="flex-between"><span class="muted">Çıkış</span><span class="font-mono">{{ original.clock_out }}</span></div>
+    <div class="flex-between"><span class="muted">Normal saat</span><span>{{ original.regular_hours }}s</span></div>
+    <div class="flex-between"><span class="muted">Fazla mesai</span><span>{{ original.overtime_hours }}s</span></div>
+    <div class="flex-between"><span class="muted">Toplam maliyet</span><span class="text-green fw-700">{{ original.total_cost_eur }}</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-head"><h2>Yeni değerler (düzenle)</h2></div>
+  <div class="card-body">
+    {% if entry.status == "completed" %}
+    <form method="post" action="/admin-time/time-entries/{{ entry.id }}/edit" style="display:flex;flex-direction:column;gap:16px">
+      <div class="form-row">
+        <div>
+          <label>Çalışan</label>
+          <select name="employee_id" required style="width:100%;min-height:38px">
+            {% for e in employees %}
+            <option value="{{ e.id }}" {% if entry.employee_id == e.id %}selected{% endif %}>{{ e.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Araç</label>
+          <select name="vehicle_id" required style="width:100%;min-height:38px">
+            {% for v in vehicles %}
+            <option value="{{ v.id }}" {% if entry.vehicle_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label>Giriş (yerel)</label>
+          <input type="datetime-local" name="clock_in" value="{{ clock_in_value }}" style="width:100%">
+        </div>
+        <div>
+          <label>Çıkış (yerel)</label>
+          <input type="datetime-local" name="clock_out" value="{{ clock_out_value }}" style="width:100%">
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label>Normal saat (manuel, isteğe bağlı)</label>
+          <input name="normal_hours" value="{{ normal_hours_value }}" placeholder="Boş bırakın — süre giriş/çıkıştan hesaplanır" style="width:100%">
+        </div>
+        <div>
+          <label>Fazla mesai saat (manuel, isteğe bağlı)</label>
+          <input name="overtime_hours" value="{{ overtime_hours_value }}" placeholder="Boş bırakın — veya her iki saati birlikte girin" style="width:100%">
+        </div>
+      </div>
+      <p class="small muted">Giriş/çıkış saatleriyle otomatik hesap için iki manuel saat alanını boş bırakın. Normal ve fazla mesaiyi doğrudan yazmak için <strong>her iki</strong> alanı da doldurun.</p>
+      <div>
+        <label>Düzeltme nedeni <span class="text-red">*</span></label>
+        <textarea name="reason" rows="3" required placeholder="Zorunlu — kim neyi neden düzelttiği denetim için kaydedilir" style="width:100%;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border)">{{ reason_value or "" }}</textarea>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-primary" type="submit">Kaydet</button>
+        <a class="btn btn-secondary" href="/admin-time/reports">İptal</a>
+      </div>
+    </form>
+    {% else %}
+    <p class="muted">Bu kayıt tamamlanmadığı için düzenlenemez.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if corrections %}
+<div class="card">
+  <div class="section-head"><h2>Düzeltme geçmişi</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Tarih</th><th>Kim</th><th>Rol</th><th>IP</th><th>İstemci</th>
+        <th>Eski giriş</th><th>Yeni giriş</th><th>Çalışan</th><th>Araç</th><th>Neden</th>
+      </tr></thead>
+      <tbody>
+      {% for c in corrections %}
+      <tr>
+        <td class="font-mono small">{{ c.created_at.strftime("%d.%m.%Y %H:%M") if c.created_at else "—" }}</td>
+        <td class="small">{{ c.corrected_by or "admin" }}</td>
+        <td class="small">{{ c.corrected_by_role or "admin" }}</td>
+        <td class="font-mono small">{{ c.corrected_by_ip or "—" }}</td>
+        <td class="small" style="max-width:160px;word-break:break-all" title="{{ c.corrected_by_user_agent or '' }}">{% set ua = c.corrected_by_user_agent or "" %}{% if ua %}{{ ua[:80] }}{% if ua|length > 80 %}…{% endif %}{% else %}—{% endif %}</td>
+        <td class="font-mono small">{{ c.old_clock_in.strftime("%d.%m.%Y %H:%M") if c.old_clock_in else "—" }}</td>
+        <td class="font-mono small">{{ c.new_clock_in.strftime("%d.%m.%Y %H:%M") if c.new_clock_in else "—" }}</td>
+        <td class="small">{{ c.old_employee_id }} → {{ c.new_employee_id }}</td>
+        <td class="small">{{ c.old_vehicle_id }} → {{ c.new_vehicle_id }}</td>
+        <td style="max-width:200px;font-size:12px">{{ c.reason or "—" }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

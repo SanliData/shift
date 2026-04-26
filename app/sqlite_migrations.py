@@ -121,3 +121,67 @@ def ensure_provisional_schema(db) -> None:
             db.execute(text("ALTER TABLE _te_new RENAME TO time_entries"))
             db.execute(text("PRAGMA foreign_keys=ON"))
             db.commit()
+
+
+def ensure_reporting_schema(db) -> None:
+    """Employees DOB + time_entry_corrections audit table."""
+    ecols = db.execute(text("PRAGMA table_info(employees)")).fetchall()
+    if ecols and "date_of_birth" not in {c[1] for c in ecols}:
+        db.execute(text("ALTER TABLE employees ADD COLUMN date_of_birth VARCHAR(32)"))
+        db.commit()
+    has_tc = db.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='time_entry_corrections' LIMIT 1")
+    ).fetchone()
+    if not has_tc:
+        db.execute(
+            text(
+                """
+                CREATE TABLE time_entry_corrections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    time_entry_id INTEGER NOT NULL,
+                    old_clock_in DATETIME,
+                    old_clock_out DATETIME,
+                    new_clock_in DATETIME,
+                    new_clock_out DATETIME,
+                    old_employee_id INTEGER,
+                    new_employee_id INTEGER,
+                    old_vehicle_id INTEGER,
+                    new_vehicle_id INTEGER,
+                    reason VARCHAR(1000),
+                    created_at DATETIME NOT NULL,
+                    corrected_by VARCHAR(120) DEFAULT 'admin',
+                    corrected_by_role VARCHAR(60) DEFAULT 'admin',
+                    corrected_by_ip VARCHAR(64),
+                    corrected_by_user_agent TEXT
+                )
+                """
+            )
+        )
+        db.commit()
+    tccols = db.execute(text("PRAGMA table_info(time_entry_corrections)")).fetchall()
+    if tccols:
+        tcnames = {c[1] for c in tccols}
+        alters: list[tuple[str, str]] = [
+            ("corrected_by", "VARCHAR(120) DEFAULT 'admin'"),
+            ("corrected_by_role", "VARCHAR(60) DEFAULT 'admin'"),
+            ("corrected_by_ip", "VARCHAR(64)"),
+            ("corrected_by_user_agent", "TEXT"),
+        ]
+        for col, typ in alters:
+            if col not in tcnames:
+                db.execute(text(f"ALTER TABLE time_entry_corrections ADD COLUMN {col} {typ}"))
+                db.commit()
+                tcnames.add(col)
+        db.execute(
+            text(
+                "UPDATE time_entry_corrections SET corrected_by = 'admin' "
+                "WHERE corrected_by IS NULL OR corrected_by = ''"
+            )
+        )
+        db.execute(
+            text(
+                "UPDATE time_entry_corrections SET corrected_by_role = 'admin' "
+                "WHERE corrected_by_role IS NULL OR corrected_by_role = ''"
+            )
+        )
+        db.commit()

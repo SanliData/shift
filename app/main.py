@@ -11,7 +11,7 @@ from .config import APP_NAME, TIMEZONE
 from .database import Base, SessionLocal, engine
 from .models import Employee, TimeEntry, Vehicle
 from .routes import admin_time, time_routes
-from .sqlite_migrations import ensure_provisional_schema
+from .sqlite_migrations import ensure_provisional_schema, ensure_reporting_schema
 
 app = FastAPI(title=APP_NAME, version="2.0.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -25,6 +25,7 @@ app.include_router(admin_time.router)
 def seed_data():
     with SessionLocal() as db:
         ensure_provisional_schema(db)
+        ensure_reporting_schema(db)
         cols = db.execute(text("PRAGMA table_info(employees)")).fetchall()
         col_names = {c[1] for c in cols}
         if "phone_number" not in col_names and cols:
@@ -106,62 +107,17 @@ def startup():
 
 @app.get("/")
 def root_redirect():
-    return RedirectResponse(url="/dashboard")
+    return RedirectResponse(url="/admin-time/reports")
 
 
 @app.get("/shift")
 def shift_redirect():
-    return RedirectResponse(url="/dashboard")
+    return RedirectResponse(url="/admin-time/reports")
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
-    from datetime import timedelta
-    with SessionLocal() as db:
-        now = datetime.now(BERLIN_TZ)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=today_start.weekday())
-        month_start = today_start.replace(day=1)
-        all_completed = db.scalars(select(TimeEntry).where(TimeEntry.status == "completed")).all()
-        active_entries = db.scalars(select(TimeEntry).where(TimeEntry.status == "active")).all()
-        completed_entries = db.scalars(select(TimeEntry).where(TimeEntry.status == "completed").order_by(TimeEntry.end_time.desc()).limit(10)).all()
-        today_m = week_m = month_m = 0
-        today_c = week_c = month_c = month_ot_c = 0.0
-        for e in all_completed:
-            if not e.start_time:
-                continue
-            ls = as_berlin(e.start_time)
-            m = int(e.total_minutes or 0)
-            c = float(e.total_cost or 0)
-            oc = float(e.overtime_cost or 0)
-            if ls >= today_start:
-                today_m += m; today_c += c
-            if ls >= week_start:
-                week_m += m; week_c += c
-            if ls >= month_start:
-                month_m += m; month_c += c; month_ot_c += oc
-
-    return templates.TemplateResponse(
-        request=request,
-        name="home.html",
-        context={
-            "request": request,
-            "berlin_now": now.strftime("%d.%m.%Y %H:%M:%S"),
-            "now_berlin_ts": now.timestamp(),
-            "today_hours": round(today_m / 60, 1),
-            "week_hours": round(week_m / 60, 1),
-            "month_hours": round(month_m / 60, 1),
-            "active_shift_count": len(active_entries),
-            "today_cost_eur": eur(today_c),
-            "week_cost_eur": eur(week_c),
-            "month_cost_eur": eur(month_c),
-            "month_overtime_cost_eur": eur(month_ot_c),
-            "active_entries": active_entries,
-            "completed_entries": completed_entries,
-            "missing_rate_employees": [],
-            "message": "",
-        },
-    )
+@app.get("/dashboard")
+def dashboard_redirect():
+    return RedirectResponse(url="/admin-time/reports")
 
 
 @app.get("/ui/index.html")

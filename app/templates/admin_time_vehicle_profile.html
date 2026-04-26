@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block page_title %}Araç profili{% endblock %}
+{% block page_subtitle %}{{ vehicle.name }}{% endblock %}
+
+{% block content %}
+<div class="page-head" style="margin-bottom:12px">
+  <a class="btn btn-secondary small" href="/admin-time/reports">← Raporlara dön</a>
+</div>
+
+<div class="card">
+  <div class="section-head">
+    <h2>Araç bilgileri</h2>
+    {% if vehicle.active %}<span class="badge badge-green">Aktif</span>{% else %}<span class="badge badge-red">Pasif</span>{% endif %}
+  </div>
+  <div class="card-body" style="display:grid;gap:10px;font-size:13px">
+    <div class="flex-between"><span class="muted">Ad</span><strong>{{ vehicle.name }}</strong></div>
+    <div class="flex-between"><span class="muted">Tip</span><span>{{ vehicle.type or "—" }}</span></div>
+    <div class="flex-between"><span class="muted">QR slug</span><span class="font-mono">{{ vehicle.qr_code_slug }}</span></div>
+    <div class="flex-between"><span class="muted">Mesai linki</span><a class="row-link-inline" href="{{ time_url }}" target="_blank" rel="noopener">Aç →</a></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-head"><h2>Kullanım özeti</h2></div>
+  <div class="stats">
+    <span>Toplam saat: <strong>{{ total_hours_used }}s</strong></span>
+    <span>Kullanan çalışan: <strong>{{ employee_names|length }}</strong></span>
+  </div>
+  {% if employee_names %}
+  <div class="card-body" style="padding-top:0">
+    <p class="small muted" style="margin-bottom:6px">Çalışanlar</p>
+    <p style="font-size:13px">{{ employee_names|join(', ') }}</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="section-head"><h2>Kullanım geçmişi</h2><span class="badge badge-blue">{{ history|length }} kayıt</span></div>
+  {% if history %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Tarih</th><th>Çalışan</th><th>Giriş</th><th>Çıkış</th>
+        <th>Normal</th><th>FM</th><th>Toplam</th><th>Maliyet</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for h in history %}
+      <tr class="click-row" data-href="/admin-time/time-entries/{{ h.entry_id }}/edit">
+        <td class="font-mono">{{ h.date }}</td>
+        <td>{{ h.employee_name }}</td>
+        <td class="font-mono">{{ h.start_time }}</td>
+        <td class="font-mono">{{ h.end_time }}</td>
+        <td>{{ h.regular_hours }}s</td>
+        <td>{{ h.overtime_hours }}s</td>
+        <td class="fw-700">{{ h.total_hours }}s</td>
+        <td class="text-green fw-700">{{ h.total_cost_eur }}</td>
+        <td><a class="row-link-inline" href="/admin-time/time-entries/{{ h.entry_id }}/edit">Düzenle</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><p class="muted">Kayıt yok.</p></div>
+  {% endif %}
+</div>
+
+{% if correction_rows %}
+<div class="card">
+  <div class="section-head">
+    <h2>Manuel düzeltme geçmişi</h2>
+    <span class="badge badge-amber">{{ correction_rows|length }} kayıt</span>
+  </div>
+  <p class="small muted" style="padding:12px 20px 0">Bu aracın eski veya yeni tarafında yer aldığı mesai düzeltmeleri.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Tarih</th><th>Mesai #</th><th>Kim</th><th>Rol</th><th>IP</th><th>İstemci</th>
+        <th>Giriş</th><th>Çıkış</th><th>Çalışan ID</th><th>Araç ID</th><th>Neden</th>
+      </tr></thead>
+      <tbody>
+      {% for row in correction_rows %}
+      <tr class="click-row" data-href="/admin-time/time-entries/{{ row.entry_id }}/edit">
+        <td class="font-mono small">{{ row.created }}</td>
+        <td class="font-mono">{{ row.entry_id }}</td>
+        <td class="small">{{ row.by }}</td>
+        <td class="small">{{ row.role }}</td>
+        <td class="font-mono small">{{ row.ip }}</td>
+        <td class="small" style="max-width:140px;word-break:break-all">{{ row.ua }}</td>
+        <td class="font-mono small">{{ row.old_in }} → {{ row.new_in }}</td>
+        <td class="font-mono small">{{ row.old_out }} → {{ row.new_out }}</td>
+        <td class="small">{{ row.emp_ids }}</td>
+        <td class="small">{{ row.veh_ids }}</td>
+        <td style="max-width:200px;font-size:12px">{{ row.reason }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function(){
+  document.querySelectorAll('tr.click-row[data-href]').forEach(function(tr){
+    tr.addEventListener('click', function(ev){
+      if (ev.target.closest('a')) return;
+      window.location.href = tr.getAttribute('data-href');
+    });
+  });
+})();
+</script>
+{% endblock %}
