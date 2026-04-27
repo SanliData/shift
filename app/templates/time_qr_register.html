@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Cihaz ve ön kayıt</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card" style="max-width:440px">
+    <h2>Cihazınızı kaydedin ve ön kayıt oluşturun</h2>
+    <p class="muted small" style="margin-top:8px;line-height:1.5">Araç: <strong>{{ vehicle.name }}</strong> <span class="font-mono">({{ vehicle.qr_code_slug }})</span></p>
+    <p class="small muted" style="margin-top:6px">Yönetici onayından sonra resmi çalışan kaydınıza geçersiniz; şimdilik mesaiye başlayabilirsiniz.</p>
+    {% if error %}
+    <div class="alert error" style="margin:14px 0">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{{ form_action }}" style="margin-top:16px">
+      <div class="form-group">
+        <label>Ad Soyad *</label>
+        <input type="text" name="full_name" required maxlength="200" value="{{ full_name or '' }}" placeholder="Ad Soyad">
+      </div>
+      <div class="form-group">
+        <label>Telefon *</label>
+        <input type="tel" name="phone" required maxlength="60" value="{{ phone or '' }}" placeholder="+49 170 0000000">
+      </div>
+      <div class="form-group">
+        <label>Doğum tarihi *</label>
+        <input type="date" name="date_of_birth" required value="{{ date_of_birth or '' }}">
+      </div>
+      <div class="form-group">
+        <label>İkinci telefon (isteğe bağlı)</label>
+        <input type="tel" name="secondary_phone" maxlength="60" value="{{ secondary_phone or '' }}" placeholder="+49 151 0000000">
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="primary_phone_temporary" id="primary_phone_temporary" value="true" {% if primary_phone_temporary %}checked{% endif %}>
+        <label for="primary_phone_temporary" style="margin:0;font-weight:600">Birincil telefon geçici</label>
+      </div>
+      <div class="form-group">
+        <label>Not (isteğe bağlı)</label>
+        <textarea name="registration_note" rows="2" maxlength="500" placeholder="Yöneticiye iletmek istediğiniz kısa not">{{ registration_note or '' }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-primary large" style="width:100%">Kaydet ve devam</button>
+    </form>
+    <p class="small muted" style="margin-top:16px">Resmi çalışan kaydı için yöneticinizin onayı gerekir.</p>
+  </div>
+</div>
+</body>
+</html>

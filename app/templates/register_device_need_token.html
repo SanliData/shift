@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Cihaz kaydı</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card" style="max-width:420px">
+    <h2>Cihaz kaydı için link gerekli</h2>
+    <p class="muted small" style="margin-top:10px;line-height:1.55">Bu sayfa yöneticinizin size gönderdiği <strong>kayıt linkindeki token</strong> ile açılmalıdır. Token olmadan cihaz eşlemesi yapılamaz.</p>
+    {% if vehicle %}
+    <p class="small muted" style="margin-top:12px">İlgili araç: <strong>{{ vehicle.name }}</strong> <span class="font-mono">({{ vehicle.qr_code_slug }})</span></p>
+    {% endif %}
+    <p class="small muted" style="margin-top:14px">Saha personeliyseniz ön kayıt ile başlayabilirsiniz.</p>
+    <a href="/register-self" class="btn btn-primary large" style="width:100%;margin-top:16px;display:block;text-align:center">Ön kayıt (saha)</a>
+    <p class="small muted" style="margin-top:16px">Mesai QR kodunu tekrar okuttuğunuzda, cihaz kaydı tamamlandıktan sonra bu ekran açılacaktır.</p>
+  </div>
+</div>
+</body>
+</html>

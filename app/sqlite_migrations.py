@@ -297,6 +297,14 @@ def ensure_provisional_worker_phone_extensions(db) -> None:
     if "primary_phone_is_temporary" not in names:
         db.execute(text("ALTER TABLE provisional_workers ADD COLUMN primary_phone_is_temporary BOOLEAN DEFAULT 0"))
         db.commit()
+    if "registration_note" not in names:
+        db.execute(text("ALTER TABLE provisional_workers ADD COLUMN registration_note VARCHAR(500)"))
+        db.commit()
+    if "possible_duplicate_review" not in names:
+        db.execute(
+            text("ALTER TABLE provisional_workers ADD COLUMN possible_duplicate_review BOOLEAN NOT NULL DEFAULT 0")
+        )
+        db.commit()
 
 
 def ensure_admin_users_schema(db) -> None:

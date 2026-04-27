@@ -106,6 +106,8 @@ def seed_data():
                 Vehicle(name="Excavator-01", type="excavator", qr_code_slug="vehicle-01", active=True),
                 Vehicle(name="Truck-01", type="truck", qr_code_slug="vehicle-02", active=True),
             ])
+        if db.scalar(select(Vehicle.id).where(Vehicle.qr_code_slug == "kamyon1")) is None:
+            db.add(Vehicle(name="Kamyon 1", type="truck", qr_code_slug="kamyon1", active=True))
         db.commit()
         seed_owner_admin_users(db)
 

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Cloudia Field OS — Cihaz gerekli</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="register-page">
+  <div class="register-card" style="max-width:420px">
+    <h2>Bu cihaz tanımlı değil</h2>
+    <p class="muted small" style="margin-top:10px;line-height:1.55">Mesai için bu telefonda kayıtlı bir cihaz bulunamadı. Devam etmek için kayıt olun.</p>
+    <p class="small muted" style="margin-top:12px">Araç: <strong>{{ vehicle.name }}</strong> <span class="font-mono">({{ vehicle.qr_code_slug }})</span></p>
+    <a href="/register-device?vehicle={{ vehicle.qr_code_slug }}" class="btn btn-primary large" style="width:100%;margin-top:18px;display:block;text-align:center">Cihazımı kaydet</a>
+    <p class="small muted" style="margin-top:16px">Yöneticinizden gelen kişisel kayıt linkiniz varsa onu kullanın; yoksa ön kayıt ile devam edebilirsiniz.</p>
+    <a href="/register-self" class="btn btn-secondary small" style="width:100%;margin-top:8px;display:block;text-align:center">Ön kayıt (saha)</a>
+  </div>
+</div>
+</body>
+</html>

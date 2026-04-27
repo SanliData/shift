@@ -628,6 +628,8 @@ def render_admin_time(
                 "status": pw.status,
                 "minutes": int(mins or 0),
                 "can_approve": pw.status == PW_STATUS_ACTIVE,
+                "possible_duplicate_review": bool(getattr(pw, "possible_duplicate_review", False)),
+                "registration_note": (getattr(pw, "registration_note", None) or "").strip() or "—",
             }
         )
 
@@ -1114,9 +1116,33 @@ def regenerate_employee_link(
 
 
 @router.get("/register-device", response_class=HTMLResponse)
-def register_device(request: Request, token: str, db: Session = Depends(get_db)):
+def register_device(
+    request: Request,
+    token: str | None = Query(default=None),
+    vehicle: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
     ensure_registration_token_columns(db)
     clean_token = (token or "").strip()
+    clean_vehicle = (vehicle or "").strip()
+    if not clean_token:
+        if clean_vehicle:
+            v_row = db.scalar(
+                select(Vehicle).where(Vehicle.qr_code_slug == clean_vehicle, Vehicle.active.is_(True))
+            )
+            if v_row:
+                return templates.TemplateResponse(
+                    request=request,
+                    name="register_device_need_token.html",
+                    context={"request": request, "vehicle": v_row},
+                )
+        logger.debug("register-device rejected empty token vehicle=%s", clean_vehicle)
+        return templates.TemplateResponse(
+            request=request,
+            name="register_status.html",
+            context={"request": request, "ok": False, "message": "Geçersiz veya kullanılmış token."},
+        )
+
     logger.debug("register-device request token=%s", clean_token)
     reg = get_registerable_token(db, clean_token)
     if is_preview_request(request):

@@ -103,6 +103,8 @@ class ProvisionalWorker(Base):
     primary_phone_is_temporary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     date_of_birth: Mapped[str | None] = mapped_column(String(32), nullable=True)
     device_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    registration_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    possible_duplicate_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
 

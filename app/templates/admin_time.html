@@ -107,16 +107,20 @@
   <div class="table-wrap" style="margin-top:14px">
     <table>
       <thead><tr>
-        <th>Ad</th><th>Birincil tel.</th><th>İkinci tel.</th><th>Geçici</th><th>Doğum</th><th>Durum</th><th>Çalışılan (dk)</th><th>Onay</th>
+        <th>Ad</th><th>Birincil tel.</th><th>İkinci tel.</th><th>Geçici</th><th>Doğum</th><th>Not</th><th>Durum</th><th>Çalışılan (dk)</th><th>Onay</th>
       </tr></thead>
       <tbody>
       {% for row in provisional_dashboard %}
       <tr>
-        <td><strong>{{ row.full_name }}</strong></td>
+        <td>
+          <strong>{{ row.full_name }}</strong>
+          {% if row.possible_duplicate_review %}<span class="badge badge-amber" style="margin-left:6px" title="Olası mükerrer — inceleyin">İncele</span>{% endif %}
+        </td>
         <td class="font-mono">{{ row.phone }}</td>
         <td class="font-mono small">{{ row.secondary_phone }}</td>
         <td>{% if row.primary_temp %}<span class="badge badge-amber">Evet</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ row.date_of_birth }}</td>
+        <td class="small muted" style="max-width:140px;word-break:break-word">{{ row.registration_note }}</td>
         <td><span class="badge badge-amber">{{ row.status }}</span></td>
         <td class="fw-700">{{ row.minutes }}</td>
         <td>
