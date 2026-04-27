@@ -72,6 +72,16 @@ def admin_login_get(
     )
 
 
+@router.get("-login", response_class=HTMLResponse)
+def admin_login_get_legacy(
+    request: Request,
+    next: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    reset: str | None = Query(default=None),
+):
+    return admin_login_get(request=request, next=next, error=error, reset=reset)
+
+
 @router.post("/login", response_class=HTMLResponse)
 def admin_login_post(
     request: Request,
@@ -111,6 +121,17 @@ def admin_login_post(
     _set_session_cookie(resp, request, user)
     logger.info("admin login ok %s", em)
     return resp
+
+
+@router.post("-login", response_class=HTMLResponse)
+def admin_login_post_legacy(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    return admin_login_post(request=request, email=email, password=password, next=next, db=db)
 
 
 @router.get("/logout", response_class=HTMLResponse)

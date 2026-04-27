@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="app/templates")
 
 password_reset_router = APIRouter(tags=["admin-password-reset"])
+# Backward-compatible module-level router name for app.main include.
+router = password_reset_router
 
 FORGOT_WINDOW_SEC = 15 * 60
 FORGOT_MAX_PER_WINDOW = 5

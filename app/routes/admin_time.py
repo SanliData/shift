@@ -318,6 +318,11 @@ def build_worker_register_public_url(db: Session) -> str:
     return f"{BASE_URL}/worker-register/{row.token}"
 
 
+def _active_worker_register_url(db: Session) -> str:
+    row = get_or_create_active_worker_registration_token(db)
+    return f"https://deluxfences.com/worker-register/{row.token}"
+
+
 def validate_worker_gate_token(db: Session, raw_token: str) -> WorkerRegistrationToken | None:
     clean = (raw_token or "").strip()
     if not clean:
@@ -370,6 +375,29 @@ def find_employee_id_with_permanent_primary_digits(db: Session, digits: str) -> 
     ).all():
         if normalize_phone_digits(ep.phone) == digits:
             return ep.employee_id
+    return None
+
+
+def _duplicate_worker_registration_warning(
+    db: Session, *, full_name: str, phone: str, date_of_birth: str | None
+) -> str | None:
+    """Soft warning only; registration still continues."""
+    digits = normalize_phone_digits(phone)
+    if digits:
+        for pw in db.scalars(select(ProvisionalWorker).where(ProvisionalWorker.status == PW_STATUS_PENDING)).all():
+            if normalize_phone_digits(pw.phone) == digits:
+                return "Uyarı: Bu telefon numarasıyla bekleyen başka bir ön kayıt var."
+    dob = (date_of_birth or "").strip()
+    name_key = re.sub(r"\s+", " ", (full_name or "").strip()).lower()
+    if dob and name_key:
+        for pw in db.scalars(
+            select(ProvisionalWorker).where(
+                ProvisionalWorker.status == PW_STATUS_PENDING,
+                ProvisionalWorker.date_of_birth == dob,
+            )
+        ).all():
+            if re.sub(r"\s+", " ", (pw.full_name or "").strip()).lower() == name_key:
+                return "Uyarı: Aynı ad soyad + doğum tarihi ile bekleyen başka bir ön kayıt var."
     return None
 
 
@@ -717,9 +745,11 @@ def render_admin_time(
                 "vehicle_id": vehicle_id or "",
             },
             "message": message,
-            "worker_register_public_url": f"{BASE_URL}/worker-register/{_wtoken}",
+            "worker_register_public_url": f"https://deluxfences.com/worker-register/{_wtoken}",
             "worker_register_token_preview": _wpreview,
-            "worker_register_qr_url": "/admin-time/worker-registration/qr",
+            "worker_register_qr_url": "/admin-time/worker-registration/qr.png",
+            "worker_register_qr_png_url": "/admin-time/worker-registration/qr.png",
+            "worker_register_qr_pdf_url": "/admin-time/worker-registration/qr.pdf",
             "provisional_dashboard": provisional_dashboard,
         },
     )
@@ -1289,6 +1319,7 @@ def worker_register_start(
                 },
             )
     dob = (date_of_birth or "").strip() or None
+    warning = _duplicate_worker_registration_warning(db, full_name=name, phone=ph, date_of_birth=dob)
     pw = ProvisionalWorker(
         full_name=name,
         phone=ph,
@@ -1303,7 +1334,10 @@ def worker_register_start(
     db.commit()
     db.refresh(pw)
     key = provisional_sign(pw.id)
-    return RedirectResponse(url=f"/register-self/device?pid={pw.id}&key={key}", status_code=303)
+    url = f"/register-self/device?pid={pw.id}&key={key}"
+    if warning:
+        url += "&dup=1"
+    return RedirectResponse(url=url, status_code=303)
 
 
 @router.post("/admin-time/worker-registration/regenerate")
@@ -1313,16 +1347,40 @@ def worker_registration_regenerate(db: Session = Depends(get_db)):
 
 
 @router.get("/admin-time/worker-registration/qr")
+def worker_registration_qr_legacy(db: Session = Depends(get_db)):
+    return worker_registration_qr_png(db)
+
+
+@router.get("/admin-time/worker-registration/qr.png")
 def worker_registration_qr_png(db: Session = Depends(get_db)):
-    url = f"{BASE_URL}/worker-register/{get_or_create_active_worker_registration_token(db).token}"
+    url = _active_worker_register_url(db)
     img = qrcode.make(url).convert("RGB")
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
-    return Response(content=buffer.getvalue(), media_type="image/png")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={"Content-Disposition": 'attachment; filename="worker-registration-qr.png"'},
+    )
+
+
+@router.get("/admin-time/worker-registration/qr.pdf")
+def worker_registration_qr_pdf(db: Session = Depends(get_db)):
+    url = _active_worker_register_url(db)
+    img = qrcode.make(url).convert("RGB")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PDF", resolution=300.0)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="worker-registration-qr.pdf"'},
+    )
 
 
 @router.get("/register-self/device", response_class=HTMLResponse)
-def register_self_device_page(request: Request, pid: int, key: str, db: Session = Depends(get_db)):
+def register_self_device_page(
+    request: Request, pid: int, key: str, dup: int = Query(default=0), db: Session = Depends(get_db)
+):
     ensure_provisional_schema(db)
     if is_preview_request(request):
         return HTMLResponse("<html><body>Kayıt linki hazır. Lütfen linke tıklayın.</body></html>", status_code=200)
@@ -1353,6 +1411,12 @@ def register_self_device_page(request: Request, pid: int, key: str, db: Session 
             "secondary_phone": (pw.secondary_phone or "").strip(),
             "primary_phone_is_temporary": bool(pw.primary_phone_is_temporary),
             "date_of_birth": pw.date_of_birth or "—",
+            "duplicate_warning": (
+                "Uyarı: Benzer kayıt bulundu (aynı telefon veya aynı ad soyad + doğum tarihi). "
+                "Lütfen bilgileri kontrol ederek devam edin."
+                if int(dup or 0) == 1
+                else ""
+            ),
         },
     )
 

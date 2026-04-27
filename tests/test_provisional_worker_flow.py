@@ -1,5 +1,6 @@
 """Self-registration provisional worker → time tracking → admin approval."""
 from pathlib import Path
+import re
 import sys
 from urllib.parse import parse_qs, urlparse
 
@@ -57,9 +58,19 @@ def test_worker_register_invalid_token():
 def test_admin_worker_qr_png():
     with TestClient(app) as client:
         login_admin(client)
-        qr = client.get("/admin-time/worker-registration/qr")
+        qr = client.get("/admin-time/worker-registration/qr.png")
         assert qr.status_code == 200
         assert qr.headers.get("content-type", "").startswith("image/png")
+        assert "attachment;" in (qr.headers.get("content-disposition") or "").lower()
+
+
+def test_admin_worker_qr_pdf():
+    with TestClient(app) as client:
+        login_admin(client)
+        qr = client.get("/admin-time/worker-registration/qr.pdf")
+        assert qr.status_code == 200
+        assert qr.headers.get("content-type", "").startswith("application/pdf")
+        assert "attachment;" in (qr.headers.get("content-disposition") or "").lower()
 
 
 def test_admin_dashboard_shows_worker_register_link():
@@ -68,6 +79,18 @@ def test_admin_dashboard_shows_worker_register_link():
         p = client.get("/admin-time")
         assert p.status_code == 200
         assert "/worker-register/" in p.text
+
+
+def test_admin_worker_qr_token_is_stable_between_refreshes():
+    with TestClient(app) as client:
+        login_admin(client)
+        p1 = client.get("/admin-time")
+        p2 = client.get("/admin-time")
+        assert p1.status_code == 200 and p2.status_code == 200
+        m1 = re.search(r"worker-register/([A-Za-z0-9_\\-]+)", p1.text)
+        m2 = re.search(r"worker-register/([A-Za-z0-9_\\-]+)", p2.text)
+        assert m1 and m2
+        assert m1.group(1) == m2.group(1)
 
 
 def test_worker_registration_regenerate_changes_token():

@@ -12,9 +12,8 @@ from .admin_users_seed import seed_owner_admin_users
 from .config import APP_NAME, TIMEZONE
 from .database import Base, SessionLocal, engine
 from .models import Employee, TimeEntry, Vehicle
-from .routes import admin_auth, admin_time, time_routes
+from .routes import admin_auth, admin_password_reset, admin_time, time_routes
 from .routes.admin_auth import change_password_router
-from .routes.admin_password_reset import password_reset_router
 from .sqlite_migrations import (
     ensure_employee_phones_schema,
     ensure_provisional_schema,
@@ -33,7 +32,7 @@ BERLIN_TZ = ZoneInfo(TIMEZONE)
 app.add_middleware(AdminAuthMiddleware)
 app.include_router(admin_auth.router)
 app.include_router(change_password_router)
-app.include_router(password_reset_router)
+app.include_router(admin_password_reset.router)
 app.include_router(time_routes.router)
 app.include_router(admin_time.router)
 

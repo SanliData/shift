@@ -93,10 +93,14 @@
       <img src="{{ worker_register_qr_url }}" alt="Ön kayıt QR" width="168" height="168" style="border-radius:10px;border:1px solid var(--border);background:white;padding:6px">
     </div>
     <div style="min-width:200px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <a href="{{ worker_register_qr_png_url }}" class="btn btn-secondary small">QR PNG indir</a>
+        <a href="{{ worker_register_qr_pdf_url }}" class="btn btn-secondary small">QR PDF indir</a>
+      </div>
       <form method="post" action="/admin-time/worker-registration/regenerate">
         <button type="submit" class="btn btn-secondary small">Yeni token üret</button>
       </form>
-      <p class="small muted" style="margin-top:10px">Token değişince eski QR geçersiz olur; personeli yeni QR ile güncelleyin.</p>
+      <p class="small muted" style="margin-top:10px">Bu QR sabittir. Birden fazla çalışan aynı QR ile ön kayıt oluşturabilir. Yalnızca yeni token üretildiğinde eski QR geçersiz olur.</p>
     </div>
   </div>
   {% if provisional_dashboard %}

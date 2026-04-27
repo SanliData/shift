@@ -20,6 +20,9 @@
       {% endif %}
       <div class="info-box-row"><span>Doğum tarihi</span><strong>{{ date_of_birth }}</strong></div>
     </div>
+    {% if duplicate_warning %}
+    <div class="alert warning" style="margin:10px 0">{{ duplicate_warning }}</div>
+    {% endif %}
     <form method="post" action="/register-self/confirm">
       <input type="hidden" name="pid" value="{{ pid }}">
       <input type="hidden" name="key" value="{{ key }}">
